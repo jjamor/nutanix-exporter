@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: "grafana"
+    static_configs:
+      - targets: ["grafana:3000"]
+
+# One job per cluster
+
+  - job_name: "nutanix_exporter[$CLUSTER_NAME]"
+    metrics_path: "/metrics/$CLUSTER_NAME"
+    static_configs:
+      - targets: ["NutanixExporter:9408"]
+
+# PC also gets its own "cluster"
+
+  - job_name: "nutanix_exporter[$PC_CLUSTER_NAME]"
+    metrics_path: "/metrics/$PC_CLUSTER_NAME"
+    static_configs:
+      - targets: ["NutanixExporter:9408"]

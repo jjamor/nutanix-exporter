@@ -1,0 +1,38 @@
+services:
+  NutanixExporter:
+    image: "nutanix_exporter:latest"
+    restart: unless-stopped
+    volumes:
+      - ./configs/cluster.yaml:/configs/cluster.yaml:z
+      - ./configs/storage_container.yaml:/configs/storage_container.yaml:z
+      - ./configs/host.yaml:/configs/host.yaml:z
+      - ./configs/vm.yaml:/configs/vm.yaml:z
+    env_file:
+      - ./configs/exporter.env
+    ports:
+      - '9408:9408'
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yaml"
+    volumes:
+      - ./configs/prometheus.yaml:/etc/prometheus/prometheus.yaml:z
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+volumes:
+  prometheus_data:
+  grafana_data:
