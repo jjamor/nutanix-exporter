@@ -4,3 +4,5 @@
   help: Hypervisor CPU usage in parts per million (PPM).
 - name: stats_controller_user_bytes
   help: Controller user bytes.
+- name: numvcpus
+  help: Number of virtual CPUs.
