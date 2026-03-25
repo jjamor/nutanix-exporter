@@ -20,13 +20,15 @@ jobs:
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      # v6.0.2
       with:
         fetch-depth: 0
 
     - name: Determine version
       id: create_version
-      uses: paulhatch/semantic-version@v5.4.0
+      uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3
+      # v5.4.0
       with:
         tag_prefix: 'v'
         major_pattern: "(MAJOR)"
@@ -36,7 +38,8 @@ jobs:
         bump_each_commit_patch_pattern: "(PATCH)"
 
     - name: Set up Artifactory CLI
-      uses: jfrog/setup-jfrog-cli@v4
+      uses: jfrog/setup-jfrog-cli@86dacb6974c66cc99e7651e1205f6581aaddba9a
+      # v4.10.0
       id: login
       env:
         JF_URL: https://${{ secrets.JF_URL }}
@@ -94,7 +97,8 @@ jobs:
 
     - name: Create Github Release
       if: success() && steps.create_version.outputs.version != ''
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
+      # v2.6.1
       with:
         tag_name: v${{ steps.create_version.outputs.version }}
         draft: false
