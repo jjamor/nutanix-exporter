@@ -187,13 +187,32 @@ func (es *ExporterService) refreshClusters() error {
 
 		// Register collectors for this cluster
 		slog.Info("Registering collectors for cluster", "name", name)
-		collectors := []prometheus.Collector{
-			prom.NewStorageContainerCollector(cluster, es.config.ConfigPath+"/storage_container.yaml"),
-			prom.NewClusterCollector(cluster, es.config.ConfigPath+"/cluster.yaml"),
-			prom.NewHostCollector(cluster, es.config.ConfigPath+"/host.yaml"),
-			prom.NewVMCollector(cluster, es.config.ConfigPath+"/vm.yaml"),
-			prom.NewVMv1Collector(cluster, es.config.ConfigPath+"/vm_v1.yaml"),
+		scCollector, err := prom.NewStorageContainerCollector(cluster, es.config.ConfigPath+"/storage_container.yaml")
+		if err != nil {
+			slog.Error("Failed to init storage container collector", "cluster", name, "error", err)
+			continue
 		}
+		clusterCollector, err := prom.NewClusterCollector(cluster, es.config.ConfigPath+"/cluster.yaml")
+		if err != nil {
+			slog.Error("Failed to init cluster collector", "cluster", name, "error", err)
+			continue
+		}
+		hostCollector, err := prom.NewHostCollector(cluster, es.config.ConfigPath+"/host.yaml")
+		if err != nil {
+			slog.Error("Failed to init host collector", "cluster", name, "error", err)
+			continue
+		}
+		vmCollector, err := prom.NewVMCollector(cluster, es.config.ConfigPath+"/vm.yaml")
+		if err != nil {
+			slog.Error("Failed to init VM collector", "cluster", name, "error", err)
+			continue
+		}
+		vmv1Collector, err := prom.NewVMv1Collector(cluster, es.config.ConfigPath+"/vm_v1.yaml")
+		if err != nil {
+			slog.Error("Failed to init VM v1 collector", "cluster", name, "error", err)
+			continue
+		}
+		collectors := []prometheus.Collector{scCollector, clusterCollector, hostCollector, vmCollector, vmv1Collector}
 
 		for _, collector := range collectors {
 			cluster.Registry.MustRegister(collector)
@@ -225,7 +244,7 @@ func (es *ExporterService) fetchClusters() (map[string]string, error) {
 
 	// Select appropriate request and parse functions based on API version
 	var makeRequest func(context.Context, int) (*http.Response, error)
-	var parseClusters func(map[string]interface{}) ([]map[string]string, int, error)
+	var parseClusters func(map[string]any) ([]map[string]string, int, error)
 
 	switch apiVersion {
 	case "v3":
@@ -252,12 +271,18 @@ func (es *ExporterService) fetchClusters() (map[string]string, error) {
 			return nil, fmt.Errorf("failed to make API request for page %d: %w", page, err)
 		}
 
-		var result map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to decode response for page %d: %w", page, err)
+		var result map[string]any
+		decodeErr := func() (err error) {
+			defer func() {
+				if cerr := resp.Body.Close(); cerr != nil && err == nil {
+					err = cerr
+				}
+			}()
+			return json.NewDecoder(resp.Body).Decode(&result)
+		}()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode response for page %d: %w", page, decodeErr)
 		}
-		resp.Body.Close()
 
 		clusters, total, err := parseClusters(result)
 		if err != nil {
@@ -339,7 +364,7 @@ func (es *ExporterService) fetchClusters() (map[string]string, error) {
 
 // API request methods
 func (es *ExporterService) makeV3Request(ctx context.Context, page int) (*http.Response, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"kind":   "cluster",
 		"length": 100,
 		"offset": page * 100,
@@ -370,22 +395,22 @@ func (es *ExporterService) makeV4b1Request(ctx context.Context, page int) (*http
 }
 
 // Parsing methods with metadata extraction
-func (es *ExporterService) parseV3Clusters(result map[string]interface{}) ([]map[string]string, int, error) {
-	entities, ok := result["entities"].([]interface{})
+func (es *ExporterService) parseV3Clusters(result map[string]any) ([]map[string]string, int, error) {
+	entities, ok := result["entities"].([]any)
 	if !ok {
 		return nil, 0, fmt.Errorf("unexpected v3 response format: missing 'entities' field")
 	}
 
 	// Extract total count from metadata
-	metadata := result["metadata"].(map[string]interface{})
+	metadata := result["metadata"].(map[string]any)
 	totalCount := int(metadata["total_matches"].(float64))
 
 	var clusters []map[string]string
 	unnamedCount := 0
 	for _, entity := range entities {
-		cluster := entity.(map[string]interface{})
-		spec := cluster["spec"].(map[string]interface{})
-		status := cluster["status"].(map[string]interface{})
+		cluster := entity.(map[string]any)
+		spec := cluster["spec"].(map[string]any)
+		status := cluster["status"].(map[string]any)
 
 		name, ok := spec["name"].(string)
 		if !ok || name == "" || name == "Unnamed" {
@@ -393,8 +418,8 @@ func (es *ExporterService) parseV3Clusters(result map[string]interface{}) ([]map
 			continue
 		}
 
-		resources := status["resources"].(map[string]interface{})
-		network := resources["network"].(map[string]interface{})
+		resources := status["resources"].(map[string]any)
+		network := resources["network"].(map[string]any)
 		ip, ok := network["external_ip"].(string)
 		if !ok || ip == "" {
 			continue
@@ -410,20 +435,20 @@ func (es *ExporterService) parseV3Clusters(result map[string]interface{}) ([]map
 	return clusters, totalCount - unnamedCount, nil
 }
 
-func (es *ExporterService) parseV4Clusters(result map[string]interface{}) ([]map[string]string, int, error) {
-	data, ok := result["data"].([]interface{})
+func (es *ExporterService) parseV4Clusters(result map[string]any) ([]map[string]string, int, error) {
+	data, ok := result["data"].([]any)
 	if !ok {
 		return nil, 0, fmt.Errorf("unexpected v4 response format: missing 'data' field")
 	}
 
 	// Extract total count from metadata
-	metadata := result["metadata"].(map[string]interface{})
+	metadata := result["metadata"].(map[string]any)
 	totalCount := int(metadata["totalAvailableResults"].(float64))
 
 	var clusters []map[string]string
 	unnamedCount := 0
 	for _, item := range data {
-		clusterMap := item.(map[string]interface{})
+		clusterMap := item.(map[string]any)
 
 		name, ok := clusterMap["name"].(string)
 		if !ok || name == "" || name == "Unnamed" {
@@ -432,17 +457,17 @@ func (es *ExporterService) parseV4Clusters(result map[string]interface{}) ([]map
 		}
 
 		// Navigate to network.externalAddress.ipv4.value
-		network, networkOk := clusterMap["network"].(map[string]interface{})
+		network, networkOk := clusterMap["network"].(map[string]any)
 		if !networkOk {
 			continue
 		}
 
-		externalAddress, extOk := network["externalAddress"].(map[string]interface{})
+		externalAddress, extOk := network["externalAddress"].(map[string]any)
 		if !extOk {
 			continue
 		}
 
-		ipv4, ipv4Ok := externalAddress["ipv4"].(map[string]interface{})
+		ipv4, ipv4Ok := externalAddress["ipv4"].(map[string]any)
 		if !ipv4Ok {
 			continue
 		}
@@ -475,7 +500,7 @@ func (es *ExporterService) setupHTTPHandlers() {
 }
 
 func (es *ExporterService) indexHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, `<html><head><title>Nutanix Exporter</title></head><body><h1>Nutanix Exporter</h1><p><a href="/metrics">Metrics</a></p></body></html>`)
+	_, _ = fmt.Fprint(w, `<html><head><title>Nutanix Exporter</title></head><body><h1>Nutanix Exporter</h1><p><a href="/metrics">Metrics</a></p></body></html>`)
 }
 
 func (es *ExporterService) metricsHandler(w http.ResponseWriter, r *http.Request) {
