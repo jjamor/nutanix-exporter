@@ -17,29 +17,35 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ingka-group/nutanix-exporter/internal/auth"
+	"github.com/ingka-group/nutanix-exporter/internal/collector"
 	"github.com/ingka-group/nutanix-exporter/internal/config"
 	"github.com/ingka-group/nutanix-exporter/internal/nutanix"
-	"github.com/ingka-group/nutanix-exporter/internal/prom"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const ListenAddress = ":9408"
 
+// clusterEntry pairs a Nutanix cluster with its dedicated Prometheus registry.
+// Keeping the registry here rather than on nutanix.Cluster means the HTTP client
+// layer has no Prometheus dependency.
+type clusterEntry struct {
+	cluster  *nutanix.Cluster
+	registry *prometheus.Registry
+}
+
 type ExporterService struct {
 	config             *config.Config
 	credentialProvider auth.CredentialProvider
-	clustersMap        map[string]*nutanix.Cluster
+	clustersMap        map[string]*clusterEntry
 	clustersMu         sync.RWMutex
 	server             *http.Server
 	pcCluster          *nutanix.Cluster
@@ -49,27 +55,27 @@ func NewExporterService(cfg *config.Config, credProvider auth.CredentialProvider
 	return &ExporterService{
 		config:             cfg,
 		credentialProvider: credProvider,
-		clustersMap:        make(map[string]*nutanix.Cluster),
+		clustersMap:        make(map[string]*clusterEntry),
 	}
 }
 
-func (es *ExporterService) Start() error {
-	return es.StartWithServer(true)
+func (es *ExporterService) Start(ctx context.Context) error {
+	return es.StartWithServer(ctx, true)
 }
 
-func (es *ExporterService) StartWithServer(startHTTPServer bool) error {
+func (es *ExporterService) StartWithServer(ctx context.Context, startHTTPServer bool) error {
 	// Initialize Prism Central connection
 	if err := es.initializePrismCentral(); err != nil {
 		return fmt.Errorf("failed to initialize Prism Central: %w", err)
 	}
 
 	// Initialize clusters
-	if err := es.refreshClusters(); err != nil {
+	if err := es.refreshClusters(ctx); err != nil {
 		return fmt.Errorf("failed to initialize clusters: %w", err)
 	}
 
 	// Start refresh goroutines
-	es.startRefreshRoutines()
+	es.startRefreshRoutines(ctx)
 
 	if startHTTPServer {
 		// Setup HTTP server
@@ -92,8 +98,7 @@ func (es *ExporterService) GetHandler() http.Handler {
 		es.clustersMu.RLock()
 		gatherers := make(prometheus.Gatherers, 0, len(es.clustersMap))
 		for _, cluster := range es.clustersMap {
-			cluster.RefreshCredentialsIfNeeded(es.credentialProvider)
-			gatherers = append(gatherers, cluster.Registry)
+			gatherers = append(gatherers, cluster.registry)
 		}
 		es.clustersMu.RUnlock()
 		promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{}).ServeHTTP(w, r)
@@ -129,18 +134,23 @@ func (es *ExporterService) initializePrismCentral() error {
 	return nil
 }
 
-func (es *ExporterService) startRefreshRoutines() {
+func (es *ExporterService) startRefreshRoutines(ctx context.Context) {
 	// Credential refresh
 	if es.config.VaultRefreshInterval > 0 {
 		go func() {
 			ticker := time.NewTicker(es.config.VaultRefreshInterval)
 			defer ticker.Stop()
-			for range ticker.C {
-				slog.Info("Refreshing credentials...")
-				if err := es.credentialProvider.Refresh(); err != nil {
-					slog.Error("Failed to refresh credentials", "error", err)
-				} else {
-					slog.Info("Credentials refreshed successfully")
+			for {
+				select {
+				case <-ticker.C:
+					slog.Info("Refreshing credentials...")
+					if err := es.credentialProvider.Refresh(); err != nil {
+						slog.Error("Failed to refresh credentials", "error", err)
+					} else {
+						slog.Info("Credentials refreshed successfully")
+					}
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
@@ -151,25 +161,30 @@ func (es *ExporterService) startRefreshRoutines() {
 		go func() {
 			ticker := time.NewTicker(es.config.ClusterRefreshInterval)
 			defer ticker.Stop()
-			for range ticker.C {
-				slog.Info("Refreshing cluster list...")
-				if err := es.refreshClusters(); err != nil {
-					slog.Error("Failed to refresh clusters", "error", err)
-				} else {
-					slog.Info("Cluster list refreshed successfully")
+			for {
+				select {
+				case <-ticker.C:
+					slog.Info("Refreshing cluster list...")
+					if err := es.refreshClusters(ctx); err != nil {
+						slog.Error("Failed to refresh clusters", "error", err)
+					} else {
+						slog.Info("Cluster list refreshed successfully")
+					}
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
 	}
 }
 
-func (es *ExporterService) refreshClusters() error {
-	clusterData, err := es.fetchClusters()
+func (es *ExporterService) refreshClusters(ctx context.Context) error {
+	clusterData, err := nutanix.FetchClusters(ctx, es.pcCluster.API, es.config.PCAPIVersion, es.config.ClusterPrefix)
 	if err != nil {
 		return fmt.Errorf("failed to fetch clusters: %w", err)
 	}
 
-	newClustersMap := make(map[string]*nutanix.Cluster)
+	newClustersMap := make(map[string]*clusterEntry)
 	for name, url := range clusterData {
 		cluster := nutanix.NewCluster(
 			name,
@@ -185,41 +200,39 @@ func (es *ExporterService) refreshClusters() error {
 			continue
 		}
 
-		// Register collectors for this cluster
+		registry := prometheus.NewRegistry()
+
 		slog.Info("Registering collectors for cluster", "name", name)
-		scCollector, err := prom.NewStorageContainerCollector(cluster, es.config.ConfigPath+"/storage_container.yaml")
+		scCollector, err := collector.NewStorageContainerCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/storage_container.yaml")
 		if err != nil {
 			slog.Error("Failed to init storage container collector", "cluster", name, "error", err)
 			continue
 		}
-		clusterCollector, err := prom.NewClusterCollector(cluster, es.config.ConfigPath+"/cluster.yaml")
+		clusterCollector, err := collector.NewClusterCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/cluster.yaml")
 		if err != nil {
 			slog.Error("Failed to init cluster collector", "cluster", name, "error", err)
 			continue
 		}
-		hostCollector, err := prom.NewHostCollector(cluster, es.config.ConfigPath+"/host.yaml")
+		hostCollector, err := collector.NewHostCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/host.yaml")
 		if err != nil {
 			slog.Error("Failed to init host collector", "cluster", name, "error", err)
 			continue
 		}
-		vmCollector, err := prom.NewVMCollector(cluster, es.config.ConfigPath+"/vm.yaml")
+		vmCollector, err := collector.NewVMCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm.yaml")
 		if err != nil {
 			slog.Error("Failed to init VM collector", "cluster", name, "error", err)
 			continue
 		}
-		vmv1Collector, err := prom.NewVMv1Collector(cluster, es.config.ConfigPath+"/vm_v1.yaml")
+		vmv1Collector, err := collector.NewVMv1Collector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm_v1.yaml")
 		if err != nil {
 			slog.Error("Failed to init VM v1 collector", "cluster", name, "error", err)
 			continue
 		}
-		collectors := []prometheus.Collector{scCollector, clusterCollector, hostCollector, vmCollector, vmv1Collector}
-
-		for _, collector := range collectors {
-			cluster.Registry.MustRegister(collector)
+		for _, collector := range []prometheus.Collector{scCollector, clusterCollector, hostCollector, vmCollector, vmv1Collector} {
+			registry.MustRegister(collector)
 		}
-		cluster.Collectors = collectors
 
-		newClustersMap[name] = cluster
+		newClustersMap[name] = &clusterEntry{cluster: cluster, registry: registry}
 	}
 
 	// Update the clusters map atomically
@@ -231,262 +244,6 @@ func (es *ExporterService) refreshClusters() error {
 	return nil
 }
 
-func (es *ExporterService) fetchClusters() (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	clusterData := make(map[string]string)
-
-	// Determine API version
-	apiVersion := es.config.PCAPIVersion
-
-	slog.Info("Fetching clusters", "api_version", apiVersion)
-
-	// Select appropriate request and parse functions based on API version
-	var makeRequest func(context.Context, int) (*http.Response, error)
-	var parseClusters func(map[string]any) ([]map[string]string, int, error)
-
-	switch apiVersion {
-	case "v3":
-		makeRequest = es.makeV3Request
-		parseClusters = es.parseV3Clusters
-	case "v4b1":
-		makeRequest = es.makeV4b1Request
-		parseClusters = es.parseV4Clusters
-	default: // v4
-		makeRequest = es.makeV4Request
-		parseClusters = es.parseV4Clusters
-	}
-
-	// Paginate through all results
-	page := 0
-	totalExpected := 0
-	totalFetched := 0
-
-	for {
-		slog.Info("Fetching clusters page", "page", page)
-
-		resp, err := makeRequest(ctx, page)
-		if err != nil {
-			return nil, fmt.Errorf("failed to make API request for page %d: %w", page, err)
-		}
-
-		var result map[string]any
-		decodeErr := func() (err error) {
-			defer func() {
-				if cerr := resp.Body.Close(); cerr != nil && err == nil {
-					err = cerr
-				}
-			}()
-			return json.NewDecoder(resp.Body).Decode(&result)
-		}()
-		if decodeErr != nil {
-			return nil, fmt.Errorf("failed to decode response for page %d: %w", page, decodeErr)
-		}
-
-		clusters, total, err := parseClusters(result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse clusters for page %d: %w", page, err)
-		}
-
-		// Set total expected on first page
-		if page == 0 {
-			totalExpected = total
-			slog.Info("Total clusters available", "total", totalExpected)
-		}
-
-		// Process clusters from this page
-		pageClusterCount := 0
-		duplicateCount := 0
-		for _, cluster := range clusters {
-			name := cluster["name"]
-			ip := cluster["ip"]
-
-			// Skip clusters that don't match the prefix if provided
-			if es.config.ClusterPrefix != "" && !strings.HasPrefix(name, es.config.ClusterPrefix) {
-				slog.Info("Skipping cluster due to prefix filter", "name", name, "prefix", es.config.ClusterPrefix)
-				continue
-			}
-
-			// Check if we've already seen this cluster (handles duplicate results)
-			if _, exists := clusterData[name]; exists {
-				duplicateCount++
-				slog.Info("Skipping duplicate cluster", "name", name)
-				continue
-			}
-
-			clusterData[name] = fmt.Sprintf("https://%s:9440", ip)
-			slog.Info("Found cluster", "name", name, "url", clusterData[name])
-			pageClusterCount++
-		}
-
-		totalFetched += len(clusters)
-
-		slog.Info("Processed clusters from page",
-			"page", page,
-			"clusters_on_page", len(clusters),
-			"new_clusters", pageClusterCount,
-			"duplicates", duplicateCount,
-			"total_fetched", totalFetched,
-			"total_unique", len(clusterData))
-
-		// If all clusters on this page were duplicates, we're done
-		if duplicateCount == len(clusters) && len(clusters) > 0 {
-			slog.Info("All clusters on page were duplicates, stopping pagination", "page", page)
-			break
-		}
-
-		// Check if we've fetched enough pages based on the limit
-		// For v4 API: if we got less than 100 results, this is the last page
-		if len(clusters) < 100 {
-			slog.Info("Received partial page, stopping pagination",
-				"page", page,
-				"clusters_on_page", len(clusters))
-			break
-		}
-
-		// Move to next page
-		page++
-
-		// Safety check to prevent infinite loops
-		if page > 49 {
-			slog.Warn("Reached maximum page limit, stopping pagination", "max_pages", 50)
-			break
-		}
-	}
-
-	slog.Info("Completed fetching all clusters",
-		"total_api_reported", totalExpected,
-		"total_clusters_fetched", totalFetched,
-		"total_unique_clusters", len(clusterData))
-	return clusterData, nil
-}
-
-// API request methods
-func (es *ExporterService) makeV3Request(ctx context.Context, page int) (*http.Response, error) {
-	payload := map[string]any{
-		"kind":   "cluster",
-		"length": 100,
-		"offset": page * 100,
-	}
-	return es.pcCluster.API.MakeRequestWithParams(ctx, "POST", "/api/nutanix/v3/clusters/list", nutanix.RequestParams{
-		Payload: payload,
-	})
-}
-
-func (es *ExporterService) makeV4Request(ctx context.Context, page int) (*http.Response, error) {
-	return es.pcCluster.API.MakeRequestWithParams(ctx, "GET", "/api/clustermgmt/v4.0/config/clusters", nutanix.RequestParams{
-		Params: url.Values{
-			"$limit":   []string{"100"},
-			"$page":    []string{fmt.Sprintf("%d", page)},
-			"$orderby": []string{"name"},
-		},
-	})
-}
-
-func (es *ExporterService) makeV4b1Request(ctx context.Context, page int) (*http.Response, error) {
-	return es.pcCluster.API.MakeRequestWithParams(ctx, "GET", "/api/clustermgmt/v4.0.b1/config/clusters", nutanix.RequestParams{
-		Params: url.Values{
-			"$limit":   []string{"100"},
-			"$page":    []string{fmt.Sprintf("%d", page)},
-			"$orderby": []string{"name"},
-		},
-	})
-}
-
-// Parsing methods with metadata extraction
-func (es *ExporterService) parseV3Clusters(result map[string]any) ([]map[string]string, int, error) {
-	entities, ok := result["entities"].([]any)
-	if !ok {
-		return nil, 0, fmt.Errorf("unexpected v3 response format: missing 'entities' field")
-	}
-
-	// Extract total count from metadata
-	metadata := result["metadata"].(map[string]any)
-	totalCount := int(metadata["total_matches"].(float64))
-
-	var clusters []map[string]string
-	unnamedCount := 0
-	for _, entity := range entities {
-		cluster := entity.(map[string]any)
-		spec := cluster["spec"].(map[string]any)
-		status := cluster["status"].(map[string]any)
-
-		name, ok := spec["name"].(string)
-		if !ok || name == "" || name == "Unnamed" {
-			unnamedCount++
-			continue
-		}
-
-		resources := status["resources"].(map[string]any)
-		network := resources["network"].(map[string]any)
-		ip, ok := network["external_ip"].(string)
-		if !ok || ip == "" {
-			continue
-		}
-
-		clusters = append(clusters, map[string]string{
-			"name": name,
-			"ip":   ip,
-		})
-	}
-
-	// Adjust total count to exclude unnamed clusters
-	return clusters, totalCount - unnamedCount, nil
-}
-
-func (es *ExporterService) parseV4Clusters(result map[string]any) ([]map[string]string, int, error) {
-	data, ok := result["data"].([]any)
-	if !ok {
-		return nil, 0, fmt.Errorf("unexpected v4 response format: missing 'data' field")
-	}
-
-	// Extract total count from metadata
-	metadata := result["metadata"].(map[string]any)
-	totalCount := int(metadata["totalAvailableResults"].(float64))
-
-	var clusters []map[string]string
-	unnamedCount := 0
-	for _, item := range data {
-		clusterMap := item.(map[string]any)
-
-		name, ok := clusterMap["name"].(string)
-		if !ok || name == "" || name == "Unnamed" {
-			unnamedCount++
-			continue
-		}
-
-		// Navigate to network.externalAddress.ipv4.value
-		network, networkOk := clusterMap["network"].(map[string]any)
-		if !networkOk {
-			continue
-		}
-
-		externalAddress, extOk := network["externalAddress"].(map[string]any)
-		if !extOk {
-			continue
-		}
-
-		ipv4, ipv4Ok := externalAddress["ipv4"].(map[string]any)
-		if !ipv4Ok {
-			continue
-		}
-
-		ip, ok := ipv4["value"].(string)
-		if !ok || ip == "" {
-			continue
-		}
-
-		clusters = append(clusters, map[string]string{
-			"name": name,
-			"ip":   ip,
-		})
-	}
-
-	// Adjust total count to exclude unnamed clusters
-	return clusters, totalCount - unnamedCount, nil
-}
-
 func (es *ExporterService) setupHTTPHandlers() {
 	mux := http.NewServeMux()
 
@@ -494,8 +251,11 @@ func (es *ExporterService) setupHTTPHandlers() {
 	mux.HandleFunc("/metrics/", es.metricsHandler)
 
 	es.server = &http.Server{
-		Addr:    ListenAddress,
-		Handler: mux,
+		Addr:         ListenAddress,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 }
 
@@ -515,9 +275,6 @@ func (es *ExporterService) metricsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Refresh credentials for the specific cluster
-	cluster.RefreshCredentialsIfNeeded(es.credentialProvider)
-
 	// Serve metrics from the specific cluster's registry
-	promhttp.HandlerFor(cluster.Registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
+	promhttp.HandlerFor(cluster.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }

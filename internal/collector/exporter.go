@@ -13,15 +13,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package prom
+package collector
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 
 	"os"
+	"time"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,39 +40,43 @@ type MetricConfig struct {
 
 // Exporter is the struct that gets extended by all other exporters
 type Exporter struct {
-	Cluster *nutanix.Cluster                // Reference to the parent Cluster struct
-	Metrics map[string]*prometheus.GaugeVec // Holds the metrics defined by the exporter
-	Labels  []string                        // Common labels for the metrics
+	clusterName string
+	api         nutanix.NutanixClient
+	apiPath     string
+	metrics     map[string]*prometheus.GaugeVec
+	labels      []string
 }
 
 // NewExporter is the constructor for Exporter
-func NewExporter(cluster *nutanix.Cluster, labels []string) *Exporter {
+func NewExporter(clusterName string, api nutanix.NutanixClient, apiPath string, labels []string) *Exporter {
 	return &Exporter{
-		Cluster: cluster,
-		Metrics: make(map[string]*prometheus.GaugeVec),
-		Labels:  labels,
+		clusterName: clusterName,
+		api:         api,
+		apiPath:     apiPath,
+		metrics:     make(map[string]*prometheus.GaugeVec),
+		labels:      labels,
 	}
 }
 
-// valueToFloat64 converts given value to Float64
-// If the value is a string, it will be checked for "on" and "off" and converted to 1 and 0 respectively
-// Otherwise it will be parsed as a float64
-func (e *Exporter) valueToFloat64(value any) float64 {
+// valueToFloat64 converts a value to float64. Strings "on"/"off" (case-insensitive)
+// map to 1/0; other strings are parsed as floats.
+func valueToFloat64(value any) float64 {
 	switch v := value.(type) {
 	case float64:
 		return v
 	case bool:
 		if v {
 			return 1.0
-		} else {
+		}
+		return 0.0
+	case string:
+		if strings.EqualFold(v, "on") {
+			return 1.0
+		}
+		if strings.EqualFold(v, "off") {
 			return 0.0
 		}
-	case string:
-		if v == "on" {
-			return 1.0
-		} else if v == "off" || v == "OFF" {
-			return 0.0
-		} else if f, err := strconv.ParseFloat(v, 64); err == nil {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
 		}
 	}
@@ -80,7 +84,7 @@ func (e *Exporter) valueToFloat64(value any) float64 {
 }
 
 // normalizeKey normalizes given key to lowercase and replaces . and - with _
-func (e *Exporter) normalizeKey(key string) string {
+func normalizeKey(key string) string {
 	return strings.ToLower(strings.NewReplacer(".", "_", "-", "_", ":", "_").Replace(key))
 }
 
@@ -104,68 +108,56 @@ func (e *Exporter) flattenMap(prefix string, nestedMap map[string]any) map[strin
 	return flatMap
 }
 
-// Describe method required by prometheus.Collector interface
+// Describe implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
-	for _, gaugeVec := range e.Metrics {
+	for _, gaugeVec := range e.metrics {
 		gaugeVec.Describe(ch)
 	}
 }
 
-// fetchData makes a GET request to the given path and returns the response body a map[string]any. It also handles credential refresh logic in case of authentication errors.
-func (e *Exporter) fetchData(ctx context.Context, path string) (result map[string]any, err error) {
+// Collect implements prometheus.Collector.
+func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	if e.Cluster.RefreshNeeded {
-		return nil, fmt.Errorf("skipping %s due to known stale creds", e.Cluster.Name)
-	}
-
-	resp, err := e.Cluster.API.MakeRequest(ctx, "GET", path)
+	resp, err := e.api.MakeRequest(ctx, "GET", e.apiPath)
 	if err != nil {
-		return nil, err
+		slog.Error("Error fetching data", "path", e.apiPath, "cluster", e.clusterName, "error", err)
+		return
 	}
 	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil && err == nil {
-			err = cerr
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Error("Error closing response body", "path", e.apiPath, "cluster", e.clusterName, "error", cerr)
 		}
 	}()
 
-	if resp.StatusCode == 403 || resp.StatusCode == 401 {
-		e.Cluster.Mutex.Lock()
-		if !e.Cluster.RefreshNeeded {
-			slog.Warn("Marking stale credentials for refresh", "cluster", e.Cluster.Name)
-			e.Cluster.RefreshNeeded = true
-		}
-		e.Cluster.Mutex.Unlock()
-		return nil, fmt.Errorf("authentication failed for cluster %s", e.Cluster.Name)
-	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("request failed: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		slog.Error("Error fetching data", "path", e.apiPath, "cluster", e.clusterName, "status", resp.Status)
+		return
 	}
 
+	var result map[string]any
 	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		slog.Error("Error decoding response body", "error", err)
-		return nil, err
+		slog.Error("Error decoding response", "path", e.apiPath, "cluster", e.clusterName, "error", err)
+		return
 	}
 
-	return result, nil
+	e.updateMetrics(result)
+
+	for _, gaugeVec := range e.metrics {
+		gaugeVec.Collect(ch)
+	}
 }
 
-// initMetrics initializes metrics based on the provided config file and labels.
-func (e *Exporter) initMetrics(configPath string, labelNames []string) error {
-	yamlFile, err := os.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-
+// initMetrics populates e.metrics from parsed YAML bytes and the subsystem name.
+func (e *Exporter) initMetrics(subsystem string, data []byte, labelNames []string) error {
 	var metrics []MetricConfig
-	err = yaml.Unmarshal(yamlFile, &metrics)
-	if err != nil {
+	if err := yaml.Unmarshal(data, &metrics); err != nil {
 		return err
 	}
-
-	// Use the filename without extension as the subsystem
-	subsystem := strings.TrimSuffix(filepath.Base(configPath), filepath.Ext(configPath))
 
 	for _, m := range metrics {
-		e.Metrics[m.Name] = prometheus.NewGaugeVec(
+		e.metrics[m.Name] = prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "nutanix",
 				Subsystem: subsystem,
@@ -177,6 +169,16 @@ func (e *Exporter) initMetrics(configPath string, labelNames []string) error {
 	}
 
 	return nil
+}
+
+// initMetricsFromFile reads configPath and delegates to initMetrics.
+func (e *Exporter) initMetricsFromFile(configPath string, labelNames []string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	subsystem := strings.TrimSuffix(filepath.Base(configPath), filepath.Ext(configPath))
+	return e.initMetrics(subsystem, data, labelNames)
 }
 
 // updateMetrics processes the JSON structure for hosts and updates the metrics.
@@ -210,27 +212,27 @@ func (e *Exporter) processEntity(ent map[string]any, isCluster bool) {
 	// Iterate over the flattened map and update the metrics
 	for key, value := range flatEntity {
 		// Normalize the key and check if we're collecting this metric
-		normKey := e.normalizeKey(key)
-		if g, exists := e.Metrics[normKey]; exists {
+		normKey := normalizeKey(key)
+		if g, exists := e.metrics[normKey]; exists {
 			// Set label values and update the metric
 			var labelValues []string
 
 			if isCluster {
 				// clustername is the only label for cluster-level metrics
-				labelValues = []string{e.Cluster.Name}
+				labelValues = []string{e.clusterName}
 			} else {
 				// For entity-level metrics, use both cluster name and entity name as labels
 				if name, ok := ent["name"].(string); ok {
-					labelValues = []string{e.Cluster.Name, name}
+					labelValues = []string{e.clusterName, name}
 					// Check for vmname key if name key is not present (used in VMv1 API)
 				} else if name, ok := ent["vmName"].(string); ok {
-					labelValues = []string{e.Cluster.Name, name}
+					labelValues = []string{e.clusterName, name}
 				} else {
 					// Handle case where "name" is missing or not a string
-					labelValues = []string{e.Cluster.Name, "unknown"}
+					labelValues = []string{e.clusterName, "unknown"}
 				}
 			}
-			g.WithLabelValues(labelValues...).Set(e.valueToFloat64(value))
+			g.WithLabelValues(labelValues...).Set(valueToFloat64(value))
 		}
 	}
 }
@@ -241,10 +243,10 @@ func (e *Exporter) processMetadata(metadata map[string]any) {
 	flatMetadata := e.flattenMap("", metadata)
 	for key, value := range flatMetadata {
 		// Normalize the key and check if we're collecting this metric
-		normKey := e.normalizeKey(key)
-		if g, exists := e.Metrics[normKey]; exists {
+		normKey := normalizeKey(key)
+		if g, exists := e.metrics[normKey]; exists {
 			// Set label values and update the metric
-			g.WithLabelValues(e.Cluster.Name, "N/A").Set(e.valueToFloat64(value))
+			g.WithLabelValues(e.clusterName, "N/A").Set(valueToFloat64(value))
 		}
 	}
 }
