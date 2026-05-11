@@ -47,6 +47,7 @@ type ExporterService struct {
 	clustersMu         sync.RWMutex
 	server             *http.Server
 	pcCluster          *nutanix.Cluster
+	pcRegistry         *prometheus.Registry
 }
 
 func NewExporterService(cfg *config.Config, credProvider auth.CredentialProvider) *ExporterService {
@@ -66,6 +67,9 @@ func (es *ExporterService) StartWithServer(ctx context.Context, startHTTPServer 
 	if err := es.initializePrismCentral(); err != nil {
 		return fmt.Errorf("failed to initialize Prism Central: %w", err)
 	}
+
+	// Initialize Prism Central collectors (v3 API)
+	es.initPCCollectors()
 
 	// Initialize clusters
 	if err := es.refreshClusters(ctx); err != nil {
@@ -94,11 +98,14 @@ func (es *ExporterService) StartWithServer(ctx context.Context, startHTTPServer 
 func (es *ExporterService) GetHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		es.clustersMu.RLock()
-		gatherers := make(prometheus.Gatherers, 0, len(es.clustersMap))
+		gatherers := make(prometheus.Gatherers, 0, len(es.clustersMap)+1)
 		for _, cluster := range es.clustersMap {
 			gatherers = append(gatherers, cluster.registry)
 		}
 		es.clustersMu.RUnlock()
+		if es.pcRegistry != nil {
+			gatherers = append(gatherers, es.pcRegistry)
+		}
 		promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 	})
 }
@@ -174,6 +181,13 @@ func (es *ExporterService) startRefreshRoutines(ctx context.Context) {
 			}
 		}()
 	}
+}
+
+func (es *ExporterService) initPCCollectors() {
+	es.pcRegistry = prometheus.NewRegistry()
+	vmV3Collector := collector.NewVMv3Collector(es.pcCluster.API)
+	es.pcRegistry.MustRegister(vmV3Collector)
+	slog.Info("Registered Prism Central v3 collectors")
 }
 
 func (es *ExporterService) refreshClusters(ctx context.Context) error {
@@ -273,6 +287,9 @@ func (es *ExporterService) metricsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Serve metrics from the specific cluster's registry
-	promhttp.HandlerFor(cluster.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
+	gatherers := prometheus.Gatherers{cluster.registry}
+	if es.pcRegistry != nil {
+		gatherers = append(gatherers, es.pcRegistry)
+	}
+	promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
