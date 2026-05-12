@@ -34,9 +34,10 @@ const (
 
 // VMv3Collector collects VM metadata from the Prism Central v3 API.
 type VMv3Collector struct {
-	pcAPI      nutanix.NutanixClient
-	infoGauge  *prometheus.GaugeVec
-	powerGauge *prometheus.GaugeVec
+	pcAPI          nutanix.NutanixClient
+	infoGauge      *prometheus.GaugeVec
+	powerGauge     *prometheus.GaugeVec
+	memorySizeGauge *prometheus.GaugeVec
 }
 
 func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
@@ -60,12 +61,22 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 			},
 			[]string{"cluster_name", "vm_name"},
 		),
+		memorySizeGauge: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "nutanix",
+				Subsystem: "vm",
+				Name:      "memory_size_bytes",
+				Help:      "VM assigned memory in bytes.",
+			},
+			[]string{"cluster_name", "vm_name"},
+		),
 	}
 }
 
 func (c *VMv3Collector) Describe(ch chan<- *prometheus.Desc) {
 	c.infoGauge.Describe(ch)
 	c.powerGauge.Describe(ch)
+	c.memorySizeGauge.Describe(ch)
 }
 
 func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
@@ -80,6 +91,7 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 
 	c.infoGauge.Reset()
 	c.powerGauge.Reset()
+	c.memorySizeGauge.Reset()
 
 	for _, vm := range vms {
 		c.infoGauge.WithLabelValues(
@@ -95,10 +107,15 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 			powerValue = 1.0
 		}
 		c.powerGauge.WithLabelValues(vm.clusterName, vm.name).Set(powerValue)
+
+		if vm.memorySizeMib > 0 {
+			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.name).Set(float64(vm.memorySizeMib) * 1048576)
+		}
 	}
 
 	c.infoGauge.Collect(ch)
 	c.powerGauge.Collect(ch)
+	c.memorySizeGauge.Collect(ch)
 }
 
 type vmV3Info struct {
@@ -107,6 +124,7 @@ type vmV3Info struct {
 	clusterName    string
 	powerState     string
 	hypervisorType string
+	memorySizeMib  int64
 }
 
 func (c *VMv3Collector) fetchAllVMs(ctx context.Context) ([]vmV3Info, error) {
@@ -195,9 +213,13 @@ func parseVMv3Entity(entity any) *vmV3Info {
 
 	powerState := ""
 	hypervisorType := ""
+	var memorySizeMib int64
 	if resources, ok := status["resources"].(map[string]any); ok {
 		powerState, _ = resources["power_state"].(string)
 		hypervisorType, _ = resources["hypervisor_type"].(string)
+		if mib, ok := resources["memory_size_mib"].(float64); ok {
+			memorySizeMib = int64(mib)
+		}
 	}
 
 	return &vmV3Info{
@@ -206,5 +228,6 @@ func parseVMv3Entity(entity any) *vmV3Info {
 		clusterName:    clusterName,
 		powerState:     powerState,
 		hypervisorType: hypervisorType,
+		memorySizeMib:  memorySizeMib,
 	}
 }

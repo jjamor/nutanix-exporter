@@ -24,7 +24,25 @@
   help: Number of IOPS on the host.
 - name: stats_avg_io_latency_usecs
   help: Average I/O latency in microseconds.
+- name: stats_hypervisor_memory_usage_ppm
+  help: Hypervisor memory usage in parts per million.
+- name: stats_num_read_iops
+  help: Number of read IOPS on the host.
+- name: stats_num_write_iops
+  help: Number of write IOPS on the host.
+- name: stats_read_io_bandwidth_kbps
+  help: Read I/O bandwidth in kB/s.
+- name: stats_write_io_bandwidth_kbps
+  help: Write I/O bandwidth in kB/s.
+- name: stats_io_bandwidth_kbps
+  help: Total I/O bandwidth in kB/s.
+- name: stats_hypervisor_num_received_bytes
+  help: Total network bytes received by the hypervisor.
+- name: stats_hypervisor_num_transmitted_bytes
+  help: Total network bytes transmitted by the hypervisor.
 - name: usage_stats_storage_capacity_bytes
   help: Total capacity of the host in bytes.
 - name: usage_stats_storage_free_bytes
   help: Total free space of the host in bytes.
+- name: usage_stats_storage_usage_bytes
+  help: Total storage usage of the host in bytes.
