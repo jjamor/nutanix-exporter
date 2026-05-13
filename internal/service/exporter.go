@@ -231,6 +231,8 @@ func (es *ExporterService) refreshClusters(ctx context.Context) error {
 			continue
 		}
 		hostInfoCollector := collector.NewHostInfoCollector(cluster.Name, cluster.API)
+		clusterInfoCollector := collector.NewClusterInfoCollector(cluster.Name, cluster.API)
+		scInfoCollector := collector.NewStorageContainerInfoCollector(cluster.Name, cluster.API)
 		vmCollector, err := collector.NewVMCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm.yaml")
 		if err != nil {
 			slog.Error("Failed to init VM collector", "cluster", name, "error", err)
@@ -241,7 +243,7 @@ func (es *ExporterService) refreshClusters(ctx context.Context) error {
 			slog.Error("Failed to init VM v1 collector", "cluster", name, "error", err)
 			continue
 		}
-		for _, collector := range []prometheus.Collector{scCollector, clusterCollector, hostCollector, hostInfoCollector, vmCollector, vmv1Collector} {
+		for _, collector := range []prometheus.Collector{scCollector, clusterCollector, hostCollector, hostInfoCollector, clusterInfoCollector, scInfoCollector, vmCollector, vmv1Collector} {
 			registry.MustRegister(collector)
 		}
 

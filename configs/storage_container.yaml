@@ -30,3 +30,19 @@
   help: Total bytes used before compression.
 - name: usage_stats_data_reduction_compression_post_reduction_bytes
   help: Total bytes used after compression.
+- name: usage_stats_storage_free_bytes
+  help: Free space of the storage container in bytes.
+- name: replication_factor
+  help: Replication factor of the storage container.
+- name: erasure_code
+  help: Erasure coding enabled (1=on, 0=off).
+- name: stats_controller_num_read_iops
+  help: Number of read IOPS on the storage container.
+- name: stats_controller_num_write_iops
+  help: Number of write IOPS on the storage container.
+- name: stats_controller_read_io_bandwidth_kbps
+  help: Read I/O bandwidth in kB/s.
+- name: stats_controller_write_io_bandwidth_kbps
+  help: Write I/O bandwidth in kB/s.
+- name: stats_controller_io_bandwidth_kbps
+  help: Total I/O bandwidth in kB/s.

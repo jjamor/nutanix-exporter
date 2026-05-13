@@ -34,10 +34,11 @@ const (
 
 // VMv3Collector collects VM metadata from the Prism Central v3 API.
 type VMv3Collector struct {
-	pcAPI          nutanix.NutanixClient
-	infoGauge      *prometheus.GaugeVec
-	powerGauge     *prometheus.GaugeVec
+	pcAPI           nutanix.NutanixClient
+	infoGauge       *prometheus.GaugeVec
+	powerGauge      *prometheus.GaugeVec
 	memorySizeGauge *prometheus.GaugeVec
+	countGauge      *prometheus.GaugeVec
 }
 
 func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
@@ -70,6 +71,15 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 			},
 			[]string{"cluster_name", "vm_name"},
 		),
+		countGauge: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "nutanix",
+				Subsystem: "vm",
+				Name:      "count",
+				Help:      "Total number of VMs per cluster.",
+			},
+			[]string{"cluster_name"},
+		),
 	}
 }
 
@@ -77,6 +87,7 @@ func (c *VMv3Collector) Describe(ch chan<- *prometheus.Desc) {
 	c.infoGauge.Describe(ch)
 	c.powerGauge.Describe(ch)
 	c.memorySizeGauge.Describe(ch)
+	c.countGauge.Describe(ch)
 }
 
 func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
@@ -92,7 +103,9 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 	c.infoGauge.Reset()
 	c.powerGauge.Reset()
 	c.memorySizeGauge.Reset()
+	c.countGauge.Reset()
 
+	clusterVMCount := make(map[string]float64)
 	for _, vm := range vms {
 		c.infoGauge.WithLabelValues(
 			vm.clusterName,
@@ -111,11 +124,18 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 		if vm.memorySizeMib > 0 {
 			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.name).Set(float64(vm.memorySizeMib) * 1048576)
 		}
+
+		clusterVMCount[vm.clusterName]++
+	}
+
+	for cluster, count := range clusterVMCount {
+		c.countGauge.WithLabelValues(cluster).Set(count)
 	}
 
 	c.infoGauge.Collect(ch)
 	c.powerGauge.Collect(ch)
 	c.memorySizeGauge.Collect(ch)
+	c.countGauge.Collect(ch)
 }
 
 type vmV3Info struct {
