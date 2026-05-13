@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,9 +30,10 @@ import (
 
 // StorageContainerInfoCollector exposes storage container metadata from the PE v2 API.
 type StorageContainerInfoCollector struct {
-	clusterName string
-	api         nutanix.NutanixClient
-	infoGauge   *prometheus.GaugeVec
+	clusterName  string
+	api          nutanix.NutanixClient
+	infoGauge    *prometheus.GaugeVec
+	usagePercent *prometheus.GaugeVec
 }
 
 func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixClient) *StorageContainerInfoCollector {
@@ -47,11 +49,21 @@ func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixCli
 			},
 			[]string{"cluster_name", "container_name", "container_uuid", "replication_factor", "compression", "dedup", "erasure_code"},
 		),
+		usagePercent: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "nutanix",
+				Subsystem: "storage_container",
+				Name:      "usage_percent",
+				Help:      "Storage container usage as a percentage of capacity.",
+			},
+			[]string{"cluster_name", "container_name"},
+		),
 	}
 }
 
 func (c *StorageContainerInfoCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.infoGauge.Describe(ch)
+	c.usagePercent.Describe(ch)
 }
 
 func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
@@ -86,6 +98,7 @@ func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	c.infoGauge.Reset()
+	c.usagePercent.Reset()
 
 	for _, entity := range entities {
 		ent, ok := entity.(map[string]any)
@@ -131,7 +144,18 @@ func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
 			dedup,
 			erasure,
 		).Set(1)
+
+		if usageStats, ok := ent["usage_stats"].(map[string]any); ok {
+			capacityStr, _ := usageStats["storage.capacity_bytes"].(string)
+			usageStr, _ := usageStats["storage.usage_bytes"].(string)
+			capacity, errC := strconv.ParseFloat(capacityStr, 64)
+			usage, errU := strconv.ParseFloat(usageStr, 64)
+			if errC == nil && errU == nil && capacity > 0 {
+				c.usagePercent.WithLabelValues(c.clusterName, name).Set(usage / capacity * 100)
+			}
+		}
 	}
 
 	c.infoGauge.Collect(ch)
+	c.usagePercent.Collect(ch)
 }
