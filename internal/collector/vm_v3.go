@@ -51,7 +51,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "info",
 				Help:      "VM metadata exposed as labels. Always 1.",
 			},
-			[]string{"cluster_name", "vm_name", "vm_uuid", "power_state", "hypervisor_type"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name", "vm_uuid", "power_state", "hypervisor_type"},
 		),
 		powerGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -60,7 +60,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "power_state_info",
 				Help:      "VM power state: 1 = ON, 0 = OFF.",
 			},
-			[]string{"cluster_name", "vm_name"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name"},
 		),
 		memorySizeGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -69,7 +69,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "memory_size_bytes",
 				Help:      "VM assigned memory in bytes.",
 			},
-			[]string{"cluster_name", "vm_name"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name"},
 		),
 		countGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -78,7 +78,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "count",
 				Help:      "Total number of VMs per cluster.",
 			},
-			[]string{"cluster_name"},
+			[]string{"cluster_name", "cluster_uuid"},
 		),
 	}
 }
@@ -105,10 +105,15 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 	c.memorySizeGauge.Reset()
 	c.countGauge.Reset()
 
-	clusterVMCount := make(map[string]float64)
+	type clusterKey struct {
+		name string
+		uuid string
+	}
+	clusterVMCount := make(map[clusterKey]float64)
 	for _, vm := range vms {
 		c.infoGauge.WithLabelValues(
 			vm.clusterName,
+			vm.clusterUUID,
 			vm.name,
 			vm.uuid,
 			vm.powerState,
@@ -119,17 +124,17 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 		if strings.EqualFold(vm.powerState, "ON") {
 			powerValue = 1.0
 		}
-		c.powerGauge.WithLabelValues(vm.clusterName, vm.name).Set(powerValue)
+		c.powerGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name).Set(powerValue)
 
 		if vm.memorySizeMib > 0 {
-			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.name).Set(float64(vm.memorySizeMib) * 1048576)
+			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name).Set(float64(vm.memorySizeMib) * 1048576)
 		}
 
-		clusterVMCount[vm.clusterName]++
+		clusterVMCount[clusterKey{vm.clusterName, vm.clusterUUID}]++
 	}
 
-	for cluster, count := range clusterVMCount {
-		c.countGauge.WithLabelValues(cluster).Set(count)
+	for ck, count := range clusterVMCount {
+		c.countGauge.WithLabelValues(ck.name, ck.uuid).Set(count)
 	}
 
 	c.infoGauge.Collect(ch)
@@ -142,6 +147,7 @@ type vmV3Info struct {
 	name           string
 	uuid           string
 	clusterName    string
+	clusterUUID    string
 	powerState     string
 	hypervisorType string
 	memorySizeMib  int64
@@ -227,8 +233,10 @@ func parseVMv3Entity(entity any) *vmV3Info {
 	}
 
 	clusterName := ""
+	clusterUUID := ""
 	if clusterRef, ok := status["cluster_reference"].(map[string]any); ok {
 		clusterName, _ = clusterRef["name"].(string)
+		clusterUUID, _ = clusterRef["uuid"].(string)
 	}
 
 	powerState := ""
@@ -246,6 +254,7 @@ func parseVMv3Entity(entity any) *vmV3Info {
 		name:           name,
 		uuid:           uuid,
 		clusterName:    clusterName,
+		clusterUUID:    clusterUUID,
 		powerState:     powerState,
 		hypervisorType: hypervisorType,
 		memorySizeMib:  memorySizeMib,

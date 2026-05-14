@@ -36,6 +36,7 @@ func Test_parseVMv3Entity(t *testing.T) {
 					"name": "test-vm",
 					"cluster_reference": map[string]any{
 						"name": "cluster-01",
+						"uuid": "clust-uuid-01",
 					},
 					"resources": map[string]any{
 						"power_state":     "ON",
@@ -48,6 +49,7 @@ func Test_parseVMv3Entity(t *testing.T) {
 				name:           "test-vm",
 				uuid:           "abc-123",
 				clusterName:    "cluster-01",
+				clusterUUID:    "clust-uuid-01",
 				powerState:     "ON",
 				hypervisorType: "AHV",
 			},
@@ -62,6 +64,7 @@ func Test_parseVMv3Entity(t *testing.T) {
 					"name": "stopped-vm",
 					"cluster_reference": map[string]any{
 						"name": "cluster-02",
+						"uuid": "clust-uuid-02",
 					},
 					"resources": map[string]any{
 						"power_state":     "OFF",
@@ -74,6 +77,7 @@ func Test_parseVMv3Entity(t *testing.T) {
 				name:           "stopped-vm",
 				uuid:           "def-456",
 				clusterName:    "cluster-02",
+				clusterUUID:    "clust-uuid-02",
 				powerState:     "OFF",
 				hypervisorType: "AHV",
 			},
