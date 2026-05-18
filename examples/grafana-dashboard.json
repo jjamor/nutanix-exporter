@@ -126,8 +126,9 @@
             "lastNotNull"
           ],
           "fields": "/^version$/",
-          "values": false
+          "values": true
         },
+        "textMode": "value_and_name",
         "showPercentChange": false,
         "textMode": "value",
         "wideLayout": true
@@ -266,7 +267,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "count(nutanix_vm_v1_numvcpus{cluster_name=\"$cluster\"})",
+          "expr": "count(nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\"})",
           "legendFormat": "VMs",
           "range": true,
           "refId": "A"
