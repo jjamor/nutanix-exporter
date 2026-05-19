@@ -25,6 +25,7 @@ import (
 	"github.com/ingka-group/nutanix-exporter/internal/auth"
 	"github.com/ingka-group/nutanix-exporter/internal/config"
 	"github.com/ingka-group/nutanix-exporter/internal/service"
+	"github.com/prometheus/exporter-toolkit/web"
 )
 
 // Config holds configuration for the Nutanix exporter service.
@@ -59,11 +60,11 @@ func NewExporterService(cfg *Config, credProvider CredentialProvider) *ExporterS
 	return &ExporterService{svc: service.NewExporterService(internalCfg, credProvider)}
 }
 
-// StartWithServer initializes the exporter. When startHTTPServer is true, the
-// built-in HTTP server is also started on the default listen address. The
-// provided context controls the lifecycle of background refresh goroutines.
-func (es *ExporterService) StartWithServer(ctx context.Context, startHTTPServer bool) error {
-	return es.svc.StartWithServer(ctx, startHTTPServer)
+// StartWithServer initializes the exporter. When webFlags is non-nil, the
+// built-in HTTP server is started with TLS/auth support from exporter-toolkit.
+// Pass nil to skip the HTTP server (useful when embedding the exporter).
+func (es *ExporterService) StartWithServer(ctx context.Context, webFlags *web.FlagConfig) error {
+	return es.svc.StartWithServer(ctx, webFlags)
 }
 
 // GetHandler returns an http.Handler that serves combined Prometheus metrics
