@@ -13,6 +13,7 @@ The Nutanix Exporter is a Go application that fetches live data from any number 
 - Parent Exporter class that can be extended for any APIv2 endpoint
 - Per cluster metrics exposed at `/metrics/cluster-name`
 - Optional filtering by cluster name prefix
+- TLS encryption and HTTP basic authentication via [exporter-toolkit web configuration](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md)
 
 ## Getting Started
 
@@ -121,6 +122,69 @@ PE_USERNAME_<CLUSTERNAME_TWO_>=cluster2-user-name
 PE_PASSWORD_<CLUSTERNAME_TWO>=cluster2-user-password
 ```
 
+## TLS and Web Server Configuration
+
+The exporter supports TLS encryption, HTTP basic authentication, and other web server options through the [Prometheus exporter-toolkit web configuration](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md).
+
+### Command-Line Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--web.listen-address` | Address(es) on which to expose metrics and web interface. Repeatable for multiple addresses. | `:9408` |
+| `--web.config.file` | Path to the web configuration file that enables TLS or authentication. | `""` (disabled) |
+
+The `--web.listen-address` flag defaults to the value of the `EXPORTER_LISTEN_ADDRESS` environment variable if set, otherwise `:9408`.
+
+### Web Configuration File
+
+Create a YAML file and pass it with `--web.config.file`:
+
+```yaml
+# TLS configuration
+tls_server_config:
+  cert_file: /path/to/cert.pem
+  key_file: /path/to/key.pem
+
+# Optional: Basic authentication
+basic_auth_users:
+  # Passwords must be bcrypt hashed (use `htpasswd -nBC 10 "" | tr -d ':\n'`)
+  prometheus: $2y$10$mMx...hashed_password
+```
+
+### Examples
+
+Run with TLS only:
+
+```bash
+nutanix-exporter --web.config.file=web-config.yml
+```
+
+Run with TLS on multiple addresses:
+
+```bash
+nutanix-exporter --web.listen-address=:9408 --web.listen-address=:9409 --web.config.file=web-config.yml
+```
+
+Docker deployment with TLS:
+
+```yaml
+services:
+  NutanixExporter:
+    image: "your_container_registry/nutanix_exporter:latest"
+    restart: unless-stopped
+    volumes:
+      - /path/to/web-config.yml:/etc/nutanix-exporter/web-config.yml:ro
+      - /path/to/certs:/etc/nutanix-exporter/certs:ro
+    env_file:
+      - /path/to/your/configs/exporter.env
+    ports:
+      - '9408:9408'
+    command:
+      - '--web.config.file=/etc/nutanix-exporter/web-config.yml'
+```
+
+For the full list of supported options (TLS versions, cipher suites, client certificate authentication, HTTP/2, rate limiting, etc.), see the [exporter-toolkit web configuration documentation](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md).
+
 ## Deployment
 
 Example docker-compose.yml:
@@ -146,6 +210,7 @@ services:
 
 - [Go](https://golang.org/) - Programming language
 - [Go Prometheus Client](https://github.com/prometheus/client_golang) - Prometheus client library for Go
+- [Prometheus Exporter Toolkit](https://github.com/prometheus/exporter-toolkit) - TLS, basic auth, and web server configuration
 - [Go Hashicorp Vault Client](https://github.com/hashicorp/vault-client-go) - Hashicorp Vault client library for Go
 - [Docker](https://www.docker.com/) - Containerization
 - [GitHub Actions](https://docs.github.com/en/actions) - CI/CD pipeline
