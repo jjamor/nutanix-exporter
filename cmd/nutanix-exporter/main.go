@@ -34,20 +34,16 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// CLI flags (compatible with prometheus exporter-toolkit)
-	listenDefault := ":9408"
-	if addr := os.Getenv("EXPORTER_LISTEN_ADDRESS"); addr != "" {
-		listenDefault = addr
-	}
-	webFlags := kingpinflag.AddFlags(kingpin.CommandLine, listenDefault)
-	kingpin.HelpFlag.Short('h')
-	kingpin.Parse()
-
 	cfg, err := config.NewConfig()
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
+
+	// CLI flags (compatible with prometheus exporter-toolkit)
+	webFlags := kingpinflag.AddFlags(kingpin.CommandLine, cfg.ListenAddress)
+	kingpin.HelpFlag.Short('h')
+	kingpin.Parse()
 
 	var credProvider auth.CredentialProvider
 	if cfg.VaultAddress != "" {
