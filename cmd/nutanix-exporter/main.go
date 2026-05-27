@@ -22,26 +22,29 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/ingka-group/nutanix-exporter/internal/auth"
 	"github.com/ingka-group/nutanix-exporter/internal/config"
 	"github.com/ingka-group/nutanix-exporter/internal/service"
+	"github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
-// main is the entrypoint of the exporter
 func main() {
-
-	// Set up global structured Logging
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// Load configuration
 	cfg, err := config.NewConfig()
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// Create credential provider based on configuration
+	// CLI flags (compatible with prometheus exporter-toolkit)
+	webFlags := kingpinflag.AddFlags(kingpin.CommandLine, cfg.ListenAddress)
+	kingpin.HelpFlag.Short('h')
+	kingpin.Parse()
+
 	var credProvider auth.CredentialProvider
 	if cfg.VaultAddress != "" {
 		credProvider, err = auth.NewVaultCredentialProvider(cfg)
@@ -58,20 +61,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	defer stop()
 
-	// Create and start exporter service
+	if err = web.Validate(*webFlags.WebConfigFile); err != nil {
+		slog.Error("Invalid web configuration", "error", err)
+		os.Exit(1)
+	}
+
 	exporterService := service.NewExporterService(cfg, credProvider)
-	if err = exporterService.Start(ctx); err != nil {
+	if err = exporterService.Start(ctx, webFlags); err != nil {
 		slog.Error("Failed to start exporter service", "error", err)
 		os.Exit(1)
 	}
 
-	// Wait for shutdown signal
 	<-ctx.Done()
 
-	// Stop services and disconnect clients
 	stop()
-	err = exporterService.Stop()
-	if err != nil {
+	if err = exporterService.Stop(); err != nil {
 		slog.Error("Failed to stop exporter service", "error", err)
 	}
 	slog.Info("Graceful shutdown completed")

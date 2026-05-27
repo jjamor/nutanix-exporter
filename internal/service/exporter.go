@@ -30,6 +30,7 @@ import (
 	"github.com/ingka-group/nutanix-exporter/internal/nutanix"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/exporter-toolkit/web"
 )
 
 // clusterEntry pairs a Nutanix cluster with its dedicated Prometheus registry.
@@ -57,32 +58,26 @@ func NewExporterService(cfg *config.Config, credProvider auth.CredentialProvider
 	}
 }
 
-func (es *ExporterService) Start(ctx context.Context) error {
-	return es.StartWithServer(ctx, true)
+func (es *ExporterService) Start(ctx context.Context, webFlags *web.FlagConfig) error {
+	return es.StartWithServer(ctx, webFlags)
 }
 
-func (es *ExporterService) StartWithServer(ctx context.Context, startHTTPServer bool) error {
-	// Initialize Prism Central connection
+func (es *ExporterService) StartWithServer(ctx context.Context, webFlags *web.FlagConfig) error {
 	if err := es.initializePrismCentral(); err != nil {
 		return fmt.Errorf("failed to initialize Prism Central: %w", err)
 	}
 
-	// Initialize clusters
 	if err := es.refreshClusters(ctx); err != nil {
 		return fmt.Errorf("failed to initialize clusters: %w", err)
 	}
 
-	// Start refresh goroutines
 	es.startRefreshRoutines(ctx)
 
-	if startHTTPServer {
-		// Setup HTTP server
+	if webFlags != nil {
 		es.setupHTTPHandlers()
 
-		// Start server
 		go func() {
-			slog.Info("Starting server", "address", es.config.ListenAddress)
-			if err := es.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := web.ListenAndServe(es.server, webFlags, slog.Default()); err != nil && err != http.ErrServerClosed {
 				slog.Error("Server error", "error", err)
 			}
 		}()
@@ -249,7 +244,6 @@ func (es *ExporterService) setupHTTPHandlers() {
 	mux.HandleFunc("/metrics/", es.metricsHandler)
 
 	es.server = &http.Server{
-		Addr:         es.config.ListenAddress,
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
