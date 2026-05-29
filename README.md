@@ -2,7 +2,7 @@
 
 ## About
 
-The Nutanix Exporter is a Go application that fetches live data from any number of Prism Element servers and presents it in a format ingestible by Prometheus. It runs as a docker container, automatically fetching all PE clusters from a Prism Central instance and exporting metrics from multiple APIv2 endpoints (VMs, Hosts, Clusters, etc.).
+The Nutanix Exporter is a Go application that fetches live data from any number of Prism Element servers and presents it in a format ingestible by Prometheus. It runs as a docker container, automatically fetching all PE clusters from a Prism Central instance and exporting metrics from multiple APIv2 endpoints (VMs, Hosts, Clusters, etc.) and from the Prism Central v3 API for VM inventory.
 
 ## Features
 
@@ -14,6 +14,9 @@ The Nutanix Exporter is a Go application that fetches live data from any number 
 - Per cluster metrics exposed at `/metrics/cluster-name`
 - Optional filtering by cluster name prefix
 - TLS encryption and HTTP basic authentication via [exporter-toolkit web configuration](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md)
+- Prism Central v3 collectors for centralized VM inventory (metadata, power state, memory, count per cluster)
+- Dedicated info/stats collectors for cluster metadata, host state, and storage container usage
+- Example Grafana dashboards included
 
 ## Getting Started
 
@@ -42,36 +45,45 @@ The Nutanix Exporter is a Go application that fetches live data from any number 
 
 ### Metrics Configuration
 
-Metrics are collected from the Prism Element v2.0 APIs. Currently, the exporter supports the following endpoints:
+The exporter collects metrics from two sources:
 
-- Clusters
-- Hosts
-- VMs
-- Storage Containers
+#### YAML-driven collectors (Prism Element v2.0 API)
 
-Additionally, the v1 VM API is supported for gathering additional stats not available in the v2 API. The config file for this endpoint is `vm_v1.yaml`.
+Metrics from the PE v2 API are configured via YAML files in `/configs`. Currently supported endpoints:
 
-The response from the API contains a list of entities, each with a set of key-value pairs. The exporter will flatten these key-value pairs and expose them as Prometheus metrics.
+- Clusters (`cluster.yaml`)
+- Hosts (`host.yaml`) — includes hypervisor memory, read/write IOPS, I/O bandwidth, network bytes
+- VMs (`vm.yaml`)
+- Storage Containers (`storage_container.yaml`) — includes replication factor, erasure coding, per-controller IOPS/bandwidth
+- VMs v1 (`vm_v1.yaml`) — additional stats not available in v2
 
-`/config` contains a YAML configuration file for each exporter. This is where the metrics to be collected are defined. Any value in the API response can be collected; however, the exporter will only collect metrics that are defined in the configuration file. It is important to note that nested fields in the API response are flattened and exposed like "parent_child", e.g. "stats_num_iops".
+The response from the API contains a list of entities, each with a set of key-value pairs. The exporter will flatten these and expose them as Prometheus metrics. Nested fields are exposed as "parent_child", e.g. `stats_num_iops`.
 
 Each entry must have the following fields:
 
-- name: The name of the metric key in the API response
-- help: User defined description of the metric
+- name: The metric key in the API response
+- help: Description of the metric
 
 ```yaml
 - name: memory_mb
   help: Memory in MB.
-- name: power_state
-  help: Power state of the VM.
-- name: vcpu_reservation_hz
-  help: vCPU reservation in Hz.
 - name: stats_num_iops
-  help: Number of IOPS. (Example of a nested key where stats is the parent in the response)
+  help: Number of IOPS.
 ```
 
-Default configuration files are provided for each APIv2 endpoint. These can be overwritten when running the exporter by mounting a new configuration file into the container as seen in the deployment section.
+Default configuration files are provided for each endpoint. These can be overwritten when running the exporter by mounting a new configuration file into the container as seen in the deployment section.
+
+#### Dedicated collectors (no YAML configuration needed)
+
+These collectors expose structured metrics with labels and do not require YAML configuration:
+
+| Collector | API | Metrics |
+|-----------|-----|---------|
+| Cluster Info | PE v2 `/clusters/` | `nutanix_cluster_info` (metadata as labels) |
+| Cluster Stats | PE v2 `/hosts/` (aggregated) | `nutanix_cluster_cpu_capacity_hz`, `_cpu_usage_hz`, `_cpu_usage_percent`, `_memory_capacity_bytes`, `_memory_usage_bytes`, `_memory_usage_percent`, `_storage_capacity_bytes`, `_storage_used_bytes`, `_storage_free_bytes`, `_iops`, `_read_bytes_per_second`, `_write_bytes_per_second` |
+| Host Info | PE v2 `/hosts/` | `nutanix_host_info`, `nutanix_host_state` |
+| Storage Container Info | PE v2 `/storage_containers/` | `nutanix_storage_container_info`, `nutanix_storage_container_usage_percent` |
+| VM v3 | PC v3 `/vms/list` | `nutanix_vm_info`, `nutanix_vm_power_state_info`, `nutanix_vm_memory_size_bytes`, `nutanix_vm_count` |
 
 ## Running the Exporter
 
@@ -185,6 +197,13 @@ services:
 
 For the full list of supported options (TLS versions, cipher suites, client certificate authentication, HTTP/2, rate limiting, etc.), see the [exporter-toolkit web configuration documentation](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md).
 
+## Grafana Dashboards
+
+Example Grafana dashboards are provided in the `examples/` directory:
+
+- `grafana-dashboard.json` — Full dashboard with panels for all metric types
+- `grafana-dashboard-summary.json` — Summary view with high-level cluster health
+
 ## Deployment
 
 Example docker-compose.yml:
@@ -199,6 +218,7 @@ services:
       - /path/to/your/configs/storage_container.yaml:configs/storage_container.yaml:z
       - /path/to/your/configs/host.yaml:configs/host.yaml:z
       - /path/to/your/configs/vm.yaml:configs/vm.yaml:z
+      - /path/to/your/configs/vm_v1.yaml:configs/vm_v1.yaml:z
     env_file:
       - /path/to/your/configs/exporter.env
     ports:
