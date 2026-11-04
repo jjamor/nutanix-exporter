@@ -37,6 +37,9 @@ type Config struct {
 	PCTaskAccount          string        `env:"PC_TASK_ACCOUNT"`
 	ConfigPath             string        `env:"CONFIG_PATH" envDefault:"./configs"`
 	ListenAddress          string        `env:"EXPORTER_LISTEN_ADDRESS" envDefault:":9408"`
+	// SplitClusterStats makes nutanix_cluster_* one series per real cluster instead of
+	// a single sum of everything the queried Prism returns. Off keeps the old behaviour.
+	SplitClusterStats bool `env:"EXPORTER_SPLIT_CLUSTER_STATS" envDefault:"false"`
 }
 
 func NewConfig() (*Config, error) {

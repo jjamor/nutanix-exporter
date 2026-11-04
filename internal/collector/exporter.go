@@ -45,6 +45,7 @@ type Exporter struct {
 	apiPath     string
 	metrics     map[string]*prometheus.GaugeVec
 	labels      []string
+	resolver    *ClusterResolver
 }
 
 // NewExporter is the constructor for Exporter
@@ -218,18 +219,19 @@ func (e *Exporter) processEntity(ent map[string]any, isCluster bool) {
 			var labelValues []string
 
 			if isCluster {
-				// clustername is the only label for cluster-level metrics
-				labelValues = []string{e.clusterName}
+				// cluster-level metrics describe the queried cluster itself
+				labelValues = []string{e.clusterName, e.clusterName}
 			} else {
 				// For entity-level metrics, use both cluster name and entity name as labels
+				peCluster := e.resolver.ForEntity(ent, e.clusterName)
 				if name, ok := ent["name"].(string); ok {
-					labelValues = []string{e.clusterName, name}
+					labelValues = []string{e.clusterName, name, peCluster}
 					// Check for vmname key if name key is not present (used in VMv1 API)
 				} else if name, ok := ent["vmName"].(string); ok {
-					labelValues = []string{e.clusterName, name}
+					labelValues = []string{e.clusterName, name, peCluster}
 				} else {
 					// Handle case where "name" is missing or not a string
-					labelValues = []string{e.clusterName, "unknown"}
+					labelValues = []string{e.clusterName, "unknown", peCluster}
 				}
 			}
 			g.WithLabelValues(labelValues...).Set(valueToFloat64(value))
@@ -246,7 +248,7 @@ func (e *Exporter) processMetadata(metadata map[string]any) {
 		normKey := normalizeKey(key)
 		if g, exists := e.metrics[normKey]; exists {
 			// Set label values and update the metric
-			g.WithLabelValues(e.clusterName, "N/A").Set(valueToFloat64(value))
+			g.WithLabelValues(e.clusterName, "N/A", e.clusterName).Set(valueToFloat64(value))
 		}
 	}
 }

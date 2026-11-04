@@ -65,10 +65,16 @@ func NewCluster(name, rawURL string, ncp auth.CredentialProvider, isPC bool, ski
 	}
 }
 
-// FetchClusters queries Prism Central via client and returns a map of cluster name -> URL.
+// ClusterRef is what Prism Central reports about a cluster it manages.
+type ClusterRef struct {
+	URL  string
+	UUID string
+}
+
+// FetchClusters queries Prism Central via client and returns a map of cluster name -> ClusterRef.
 // apiVersion selects the PC API variant ("v3", "v4b1", or "v4" / anything else).
 // prefix, when non-empty, filters clusters whose names don't start with it.
-func FetchClusters(ctx context.Context, client NutanixClient, apiVersion, prefix string) (map[string]string, error) {
+func FetchClusters(ctx context.Context, client NutanixClient, apiVersion, prefix string) (map[string]ClusterRef, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -93,7 +99,7 @@ func FetchClusters(ctx context.Context, client NutanixClient, apiVersion, prefix
 		parseClusters = parseClustersV4
 	}
 
-	clusterData := make(map[string]string)
+	clusterData := make(map[string]ClusterRef)
 	page := 0
 	totalExpected := 0
 	totalFetched := 0
@@ -148,8 +154,8 @@ func FetchClusters(ctx context.Context, client NutanixClient, apiVersion, prefix
 				continue
 			}
 
-			clusterData[name] = fmt.Sprintf("https://%s:9440", ip)
-			slog.Info("Found cluster", "name", name, "url", clusterData[name])
+			clusterData[name] = ClusterRef{URL: fmt.Sprintf("https://%s:9440", ip), UUID: cluster["uuid"]}
+			slog.Info("Found cluster", "name", name, "url", clusterData[name].URL, "uuid", clusterData[name].UUID)
 			pageClusterCount++
 		}
 
@@ -271,9 +277,15 @@ func parseClustersV3(result map[string]any) ([]map[string]string, int, error) {
 			continue
 		}
 
+		uuid := ""
+		if metadata, ok := cluster["metadata"].(map[string]any); ok {
+			uuid, _ = metadata["uuid"].(string)
+		}
+
 		clusters = append(clusters, map[string]string{
 			"name": name,
 			"ip":   ip,
+			"uuid": uuid,
 		})
 	}
 
@@ -330,9 +342,12 @@ func parseClustersV4(result map[string]any) ([]map[string]string, int, error) {
 			continue
 		}
 
+		uuid, _ := clusterMap["extId"].(string)
+
 		clusters = append(clusters, map[string]string{
 			"name": name,
 			"ip":   ip,
+			"uuid": uuid,
 		})
 	}
 

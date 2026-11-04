@@ -32,14 +32,16 @@ import (
 type StorageContainerInfoCollector struct {
 	clusterName  string
 	api          nutanix.NutanixClient
+	resolver     *ClusterResolver
 	infoGauge    *prometheus.GaugeVec
 	usagePercent *prometheus.GaugeVec
 }
 
-func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixClient) *StorageContainerInfoCollector {
+func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixClient, resolver *ClusterResolver) *StorageContainerInfoCollector {
 	return &StorageContainerInfoCollector{
 		clusterName: clusterName,
 		api:         api,
+		resolver:    resolver,
 		infoGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "nutanix",
@@ -47,7 +49,7 @@ func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixCli
 				Name:      "info",
 				Help:      "Storage container metadata exposed as labels. Always 1.",
 			},
-			[]string{"cluster_name", "container_name", "container_uuid", "replication_factor", "compression", "dedup", "erasure_code"},
+			[]string{"cluster_name", "container_name", "container_uuid", "replication_factor", "compression", "dedup", "erasure_code", PEClusterLabel},
 		),
 		usagePercent: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -56,7 +58,7 @@ func NewStorageContainerInfoCollector(clusterName string, api nutanix.NutanixCli
 				Name:      "usage_percent",
 				Help:      "Storage container usage as a percentage of capacity.",
 			},
-			[]string{"cluster_name", "container_name"},
+			[]string{"cluster_name", "container_name", PEClusterLabel},
 		),
 	}
 }
@@ -112,6 +114,7 @@ func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		uuid, _ := ent["storage_container_uuid"].(string)
+		peCluster := c.resolver.ForEntity(ent, c.clusterName)
 
 		rf := ""
 		if n, ok := ent["replication_factor"].(float64); ok {
@@ -143,6 +146,7 @@ func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
 			compression,
 			dedup,
 			erasure,
+			peCluster,
 		).Set(1)
 
 		if usageStats, ok := ent["usage_stats"].(map[string]any); ok {
@@ -151,7 +155,7 @@ func (c *StorageContainerInfoCollector) Collect(ch chan<- prometheus.Metric) {
 			capacity, errC := strconv.ParseFloat(capacityStr, 64)
 			usage, errU := strconv.ParseFloat(usageStr, 64)
 			if errC == nil && errU == nil && capacity > 0 {
-				c.usagePercent.WithLabelValues(c.clusterName, name).Set(usage / capacity * 100)
+				c.usagePercent.WithLabelValues(c.clusterName, name, peCluster).Set(usage / capacity * 100)
 			}
 		}
 	}

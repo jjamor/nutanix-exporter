@@ -26,130 +26,69 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// ClusterStatsCollector computes cluster-level capacity and usage metrics
-// by aggregating data from all hosts via /v2.0/hosts/.
-type ClusterStatsCollector struct {
-	clusterName          string
-	api                  nutanix.NutanixClient
-	cpuCapacity          prometheus.Gauge
-	cpuUsageHz           prometheus.Gauge
-	cpuUsagePercent      prometheus.Gauge
-	memoryCapacity       prometheus.Gauge
-	memoryUsageBytes     prometheus.Gauge
-	memoryUsagePercent   prometheus.Gauge
-	storageCapacity      prometheus.Gauge
-	storageUsed          prometheus.Gauge
-	storageFree          prometheus.Gauge
-	iops                 prometheus.Gauge
-	readBytesPerSec      prometheus.Gauge
-	writeBytesPerSec     prometheus.Gauge
+// clusterStatsMetrics lists the cluster-level metrics derived from hosts.
+var clusterStatsMetrics = []struct{ name, help string }{
+	{"cpu_capacity_hz", "Total CPU capacity of the cluster in Hz (sum of all hosts)."},
+	{"cpu_usage_hz", "Current CPU usage of the cluster in Hz."},
+	{"cpu_usage_percent", "Current CPU usage of the cluster as a percentage."},
+	{"memory_capacity_bytes", "Total memory capacity of the cluster in bytes (sum of all hosts)."},
+	{"memory_usage_bytes", "Current memory usage of the cluster in bytes."},
+	{"memory_usage_percent", "Current memory usage of the cluster as a percentage."},
+	{"storage_capacity_bytes", "Total storage capacity of the cluster in bytes."},
+	{"storage_used_bytes", "Total storage used in the cluster in bytes."},
+	{"storage_free_bytes", "Total free storage in the cluster in bytes."},
+	{"iops", "Total IOPS across the cluster (sum of all hosts)."},
+	{"read_bytes_per_sec", "Total read throughput across the cluster in bytes/s."},
+	{"write_bytes_per_sec", "Total write throughput across the cluster in bytes/s."},
 }
 
-func NewClusterStatsCollector(clusterName string, api nutanix.NutanixClient) *ClusterStatsCollector {
-	labels := prometheus.Labels{"cluster_name": clusterName}
+// clusterAccumulator sums the hosts that belong to one cluster.
+type clusterAccumulator struct {
+	cpuCapacity, memCapacity        float64
+	cpuUsage, memUsage              float64
+	maxStorageCapacity, storageUsed float64
+	iops, readKbps, writeKbps       float64
+}
+
+// ClusterStatsCollector computes cluster-level capacity and usage metrics
+// by aggregating data from all hosts via /v2.0/hosts/.
+//
+// When the exporter queries a Prism Central, that endpoint returns the hosts of
+// every cluster it manages. By default they are all summed into one series
+// (pe_cluster_name = the queried cluster, as cluster_name). With splitByCluster
+// they are grouped by the cluster each host belongs to, giving one series per
+// real cluster.
+type ClusterStatsCollector struct {
+	clusterName    string
+	api            nutanix.NutanixClient
+	resolver       *ClusterResolver
+	splitByCluster bool
+	gauges         map[string]*prometheus.GaugeVec
+}
+
+func NewClusterStatsCollector(clusterName string, api nutanix.NutanixClient, resolver *ClusterResolver, splitByCluster bool) *ClusterStatsCollector {
+	gauges := make(map[string]*prometheus.GaugeVec, len(clusterStatsMetrics))
+	for _, m := range clusterStatsMetrics {
+		gauges[m.name] = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "nutanix",
+			Subsystem: "cluster",
+			Name:      m.name,
+			Help:      m.help,
+		}, []string{"cluster_name", PEClusterLabel})
+	}
 	return &ClusterStatsCollector{
-		clusterName: clusterName,
-		api:         api,
-		cpuCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "cpu_capacity_hz",
-			Help:        "Total CPU capacity of the cluster in Hz (sum of all hosts).",
-			ConstLabels: labels,
-		}),
-		cpuUsageHz: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "cpu_usage_hz",
-			Help:        "Current CPU usage of the cluster in Hz.",
-			ConstLabels: labels,
-		}),
-		cpuUsagePercent: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "cpu_usage_percent",
-			Help:        "Current CPU usage of the cluster as a percentage.",
-			ConstLabels: labels,
-		}),
-		memoryCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "memory_capacity_bytes",
-			Help:        "Total memory capacity of the cluster in bytes (sum of all hosts).",
-			ConstLabels: labels,
-		}),
-		memoryUsageBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "memory_usage_bytes",
-			Help:        "Current memory usage of the cluster in bytes.",
-			ConstLabels: labels,
-		}),
-		memoryUsagePercent: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "memory_usage_percent",
-			Help:        "Current memory usage of the cluster as a percentage.",
-			ConstLabels: labels,
-		}),
-		storageCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "storage_capacity_bytes",
-			Help:        "Total storage capacity of the cluster in bytes.",
-			ConstLabels: labels,
-		}),
-		storageUsed: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "storage_used_bytes",
-			Help:        "Total storage used in the cluster in bytes.",
-			ConstLabels: labels,
-		}),
-		storageFree: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "storage_free_bytes",
-			Help:        "Total free storage in the cluster in bytes.",
-			ConstLabels: labels,
-		}),
-		iops: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "iops",
-			Help:        "Total IOPS across the cluster (sum of all hosts).",
-			ConstLabels: labels,
-		}),
-		readBytesPerSec: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "read_bytes_per_sec",
-			Help:        "Total read throughput across the cluster in bytes/s.",
-			ConstLabels: labels,
-		}),
-		writeBytesPerSec: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "nutanix",
-			Subsystem:   "cluster",
-			Name:        "write_bytes_per_sec",
-			Help:        "Total write throughput across the cluster in bytes/s.",
-			ConstLabels: labels,
-		}),
+		clusterName:    clusterName,
+		api:            api,
+		resolver:       resolver,
+		splitByCluster: splitByCluster,
+		gauges:         gauges,
 	}
 }
 
 func (c *ClusterStatsCollector) Describe(ch chan<- *prometheus.Desc) {
-	c.cpuCapacity.Describe(ch)
-	c.cpuUsageHz.Describe(ch)
-	c.cpuUsagePercent.Describe(ch)
-	c.memoryCapacity.Describe(ch)
-	c.memoryUsageBytes.Describe(ch)
-	c.memoryUsagePercent.Describe(ch)
-	c.storageCapacity.Describe(ch)
-	c.storageUsed.Describe(ch)
-	c.storageFree.Describe(ch)
-	c.iops.Describe(ch)
-	c.readBytesPerSec.Describe(ch)
-	c.writeBytesPerSec.Describe(ch)
+	for _, g := range c.gauges {
+		g.Describe(ch)
+	}
 }
 
 func (c *ClusterStatsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -183,99 +122,108 @@ func (c *ClusterStatsCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	var totalCPUCapacity, totalMemCapacity float64
-	var totalCPUUsage, totalMemUsage float64
-	var maxStorageCapacity, totalStorageUsed float64
-	var totalIOPS, totalReadKbps, totalWriteKbps float64
-
+	groups := make(map[string]*clusterAccumulator)
 	for _, entity := range entities {
 		ent, ok := entity.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		cpuCap, _ := ent["cpu_capacity_in_hz"].(float64)
-		memCap, _ := ent["memory_capacity_in_bytes"].(float64)
-
-		totalCPUCapacity += cpuCap
-		totalMemCapacity += memCap
-
-		if stats, ok := ent["stats"].(map[string]any); ok {
-			if ppmStr, ok := stats["hypervisor_cpu_usage_ppm"].(string); ok {
-				if ppm, err := strconv.ParseFloat(ppmStr, 64); err == nil {
-					totalCPUUsage += cpuCap * ppm / 1000000
-				}
-			}
-			if ppmStr, ok := stats["hypervisor_memory_usage_ppm"].(string); ok {
-				if ppm, err := strconv.ParseFloat(ppmStr, 64); err == nil {
-					totalMemUsage += memCap * ppm / 1000000
-				}
-			}
-			if v, ok := stats["num_iops"].(string); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil {
-					totalIOPS += f
-				}
-			}
-			if v, ok := stats["read_io_bandwidth_kBps"].(string); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil {
-					totalReadKbps += f
-				}
-			}
-			if v, ok := stats["write_io_bandwidth_kBps"].(string); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil {
-					totalWriteKbps += f
-				}
-			}
+		peCluster := c.clusterName
+		if c.splitByCluster {
+			peCluster = c.resolver.ForEntity(ent, c.clusterName)
 		}
+		acc := groups[peCluster]
+		if acc == nil {
+			acc = &clusterAccumulator{}
+			groups[peCluster] = acc
+		}
+		acc.addHost(ent)
+	}
 
-		if usageStats, ok := ent["usage_stats"].(map[string]any); ok {
-			if v, ok := usageStats["storage.capacity_bytes"].(string); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil && f > maxStorageCapacity {
-					maxStorageCapacity = f
-				}
-			}
-			if v, ok := usageStats["storage.usage_bytes"].(string); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil {
-					totalStorageUsed += f
-				}
-			}
+	for _, g := range c.gauges {
+		g.Reset()
+	}
+	for peCluster, acc := range groups {
+		c.publish(peCluster, acc)
+	}
+	for _, g := range c.gauges {
+		g.Collect(ch)
+	}
+}
+
+// addHost adds the capacity and usage of one /v2.0/hosts/ entity.
+func (a *clusterAccumulator) addHost(ent map[string]any) {
+	cpuCap, _ := ent["cpu_capacity_in_hz"].(float64)
+	memCap, _ := ent["memory_capacity_in_bytes"].(float64)
+
+	a.cpuCapacity += cpuCap
+	a.memCapacity += memCap
+
+	if stats, ok := ent["stats"].(map[string]any); ok {
+		if ppm, ok := statFloat(stats, "hypervisor_cpu_usage_ppm"); ok {
+			a.cpuUsage += cpuCap * ppm / 1000000
+		}
+		if ppm, ok := statFloat(stats, "hypervisor_memory_usage_ppm"); ok {
+			a.memUsage += memCap * ppm / 1000000
+		}
+		if f, ok := statFloat(stats, "num_iops"); ok {
+			a.iops += f
+		}
+		if f, ok := statFloat(stats, "read_io_bandwidth_kBps"); ok {
+			a.readKbps += f
+		}
+		if f, ok := statFloat(stats, "write_io_bandwidth_kBps"); ok {
+			a.writeKbps += f
 		}
 	}
 
-	c.cpuCapacity.Set(totalCPUCapacity)
-	c.cpuUsageHz.Set(totalCPUUsage)
-	if totalCPUCapacity > 0 {
-		c.cpuUsagePercent.Set(totalCPUUsage / totalCPUCapacity * 100)
+	if usageStats, ok := ent["usage_stats"].(map[string]any); ok {
+		if f, ok := statFloat(usageStats, "storage.capacity_bytes"); ok && f > a.maxStorageCapacity {
+			a.maxStorageCapacity = f
+		}
+		if f, ok := statFloat(usageStats, "storage.usage_bytes"); ok {
+			a.storageUsed += f
+		}
+	}
+}
+
+// statFloat reads a numeric value that the API returns as a string.
+func statFloat(m map[string]any, key string) (float64, bool) {
+	str, ok := m[key].(string)
+	if !ok {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(str, 64)
+	return f, err == nil
+}
+
+func (c *ClusterStatsCollector) publish(peCluster string, a *clusterAccumulator) {
+	set := func(name string, v float64) {
+		c.gauges[name].WithLabelValues(c.clusterName, peCluster).Set(v)
 	}
 
-	c.memoryCapacity.Set(totalMemCapacity)
-	c.memoryUsageBytes.Set(totalMemUsage)
-	if totalMemCapacity > 0 {
-		c.memoryUsagePercent.Set(totalMemUsage / totalMemCapacity * 100)
+	set("cpu_capacity_hz", a.cpuCapacity)
+	set("cpu_usage_hz", a.cpuUsage)
+	if a.cpuCapacity > 0 {
+		set("cpu_usage_percent", a.cpuUsage/a.cpuCapacity*100)
 	}
 
-	c.storageCapacity.Set(maxStorageCapacity)
-	c.storageUsed.Set(totalStorageUsed)
-	if maxStorageCapacity > totalStorageUsed {
-		c.storageFree.Set(maxStorageCapacity - totalStorageUsed)
+	set("memory_capacity_bytes", a.memCapacity)
+	set("memory_usage_bytes", a.memUsage)
+	if a.memCapacity > 0 {
+		set("memory_usage_percent", a.memUsage/a.memCapacity*100)
+	}
+
+	set("storage_capacity_bytes", a.maxStorageCapacity)
+	set("storage_used_bytes", a.storageUsed)
+	if a.maxStorageCapacity > a.storageUsed {
+		set("storage_free_bytes", a.maxStorageCapacity-a.storageUsed)
 	} else {
-		c.storageFree.Set(0)
+		set("storage_free_bytes", 0)
 	}
 
-	c.iops.Set(totalIOPS)
-	c.readBytesPerSec.Set(totalReadKbps * 1024)
-	c.writeBytesPerSec.Set(totalWriteKbps * 1024)
-
-	c.cpuCapacity.Collect(ch)
-	c.cpuUsageHz.Collect(ch)
-	c.cpuUsagePercent.Collect(ch)
-	c.memoryCapacity.Collect(ch)
-	c.memoryUsageBytes.Collect(ch)
-	c.memoryUsagePercent.Collect(ch)
-	c.storageCapacity.Collect(ch)
-	c.storageUsed.Collect(ch)
-	c.storageFree.Collect(ch)
-	c.iops.Collect(ch)
-	c.readBytesPerSec.Collect(ch)
-	c.writeBytesPerSec.Collect(ch)
+	set("iops", a.iops)
+	set("read_bytes_per_sec", a.readKbps*1024)
+	set("write_bytes_per_sec", a.writeKbps*1024)
 }

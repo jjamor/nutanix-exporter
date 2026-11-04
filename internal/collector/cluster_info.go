@@ -44,7 +44,7 @@ func NewClusterInfoCollector(clusterName string, api nutanix.NutanixClient) *Clu
 				Name:      "info",
 				Help:      "Cluster metadata exposed as labels. Always 1.",
 			},
-			[]string{"cluster_name", "cluster_uuid", "version", "timezone", "num_nodes", "external_ip"},
+			[]string{"cluster_name", "cluster_uuid", "version", "timezone", "num_nodes", "external_ip", PEClusterLabel},
 		),
 	}
 }
@@ -98,6 +98,7 @@ func (c *ClusterInfoCollector) Collect(ch chan<- prometheus.Metric) {
 		timezone,
 		numNodes,
 		externalIP,
+		c.clusterName,
 	).Set(1)
 
 	c.infoGauge.Collect(ch)

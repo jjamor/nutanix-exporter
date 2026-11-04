@@ -49,6 +49,7 @@ type ExporterService struct {
 	server             *http.Server
 	pcCluster          *nutanix.Cluster
 	pcRegistry         *prometheus.Registry
+	resolver           *collector.ClusterResolver
 }
 
 func NewExporterService(cfg *config.Config, credProvider auth.CredentialProvider) *ExporterService {
@@ -56,6 +57,7 @@ func NewExporterService(cfg *config.Config, credProvider auth.CredentialProvider
 		config:             cfg,
 		credentialProvider: credProvider,
 		clustersMap:        make(map[string]*clusterEntry),
+		resolver:           collector.NewClusterResolver(),
 	}
 }
 
@@ -179,7 +181,7 @@ func (es *ExporterService) startRefreshRoutines(ctx context.Context) {
 
 func (es *ExporterService) initPCCollectors() {
 	es.pcRegistry = prometheus.NewRegistry()
-	vmV3Collector := collector.NewVMv3Collector(es.pcCluster.API)
+	vmV3Collector := collector.NewVMv3Collector(es.pcCluster.API, es.resolver)
 	es.pcRegistry.MustRegister(vmV3Collector)
 	slog.Info("Registered Prism Central v3 collectors")
 }
@@ -190,11 +192,17 @@ func (es *ExporterService) refreshClusters(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch clusters: %w", err)
 	}
 
+	clusterNames := make(map[string]string, len(clusterData))
+	for name, ref := range clusterData {
+		clusterNames[ref.UUID] = name
+	}
+	es.resolver.AddClusters(clusterNames)
+
 	newClustersMap := make(map[string]*clusterEntry)
-	for name, url := range clusterData {
+	for name, ref := range clusterData {
 		cluster := nutanix.NewCluster(
 			name,
-			url,
+			ref.URL,
 			es.credentialProvider,
 			false, // isPC
 			true,  // skipTLSVerify
@@ -209,31 +217,31 @@ func (es *ExporterService) refreshClusters(ctx context.Context) error {
 		registry := prometheus.NewRegistry()
 
 		slog.Info("Registering collectors for cluster", "name", name)
-		scCollector, err := collector.NewStorageContainerCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/storage_container.yaml")
+		scCollector, err := collector.NewStorageContainerCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/storage_container.yaml", es.resolver)
 		if err != nil {
 			slog.Error("Failed to init storage container collector", "cluster", name, "error", err)
 			continue
 		}
-		clusterCollector, err := collector.NewClusterCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/cluster.yaml")
+		clusterCollector, err := collector.NewClusterCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/cluster.yaml", es.resolver)
 		if err != nil {
 			slog.Error("Failed to init cluster collector", "cluster", name, "error", err)
 			continue
 		}
-		hostCollector, err := collector.NewHostCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/host.yaml")
+		hostCollector, err := collector.NewHostCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/host.yaml", es.resolver)
 		if err != nil {
 			slog.Error("Failed to init host collector", "cluster", name, "error", err)
 			continue
 		}
-		hostInfoCollector := collector.NewHostInfoCollector(cluster.Name, cluster.API)
+		hostInfoCollector := collector.NewHostInfoCollector(cluster.Name, cluster.API, es.resolver)
 		clusterInfoCollector := collector.NewClusterInfoCollector(cluster.Name, cluster.API)
-		clusterStatsCollector := collector.NewClusterStatsCollector(cluster.Name, cluster.API)
-		scInfoCollector := collector.NewStorageContainerInfoCollector(cluster.Name, cluster.API)
-		vmCollector, err := collector.NewVMCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm.yaml")
+		clusterStatsCollector := collector.NewClusterStatsCollector(cluster.Name, cluster.API, es.resolver, es.config.SplitClusterStats)
+		scInfoCollector := collector.NewStorageContainerInfoCollector(cluster.Name, cluster.API, es.resolver)
+		vmCollector, err := collector.NewVMCollector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm.yaml", es.resolver)
 		if err != nil {
 			slog.Error("Failed to init VM collector", "cluster", name, "error", err)
 			continue
 		}
-		vmv1Collector, err := collector.NewVMv1Collector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm_v1.yaml")
+		vmv1Collector, err := collector.NewVMv1Collector(cluster.Name, cluster.API, es.config.ConfigPath+"/vm_v1.yaml", es.resolver)
 		if err != nil {
 			slog.Error("Failed to init VM v1 collector", "cluster", name, "error", err)
 			continue

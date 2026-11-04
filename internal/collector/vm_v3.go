@@ -35,15 +35,17 @@ const (
 // VMv3Collector collects VM metadata from the Prism Central v3 API.
 type VMv3Collector struct {
 	pcAPI           nutanix.NutanixClient
+	resolver        *ClusterResolver
 	infoGauge       *prometheus.GaugeVec
 	powerGauge      *prometheus.GaugeVec
 	memorySizeGauge *prometheus.GaugeVec
 	countGauge      *prometheus.GaugeVec
 }
 
-func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
+func NewVMv3Collector(pcAPI nutanix.NutanixClient, resolver *ClusterResolver) *VMv3Collector {
 	return &VMv3Collector{
-		pcAPI: pcAPI,
+		pcAPI:    pcAPI,
+		resolver: resolver,
 		infoGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "nutanix",
@@ -51,7 +53,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "info",
 				Help:      "VM metadata exposed as labels. Always 1.",
 			},
-			[]string{"cluster_name", "cluster_uuid", "vm_name", "vm_uuid", "power_state", "hypervisor_type"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name", "vm_uuid", "power_state", "hypervisor_type", PEClusterLabel},
 		),
 		powerGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -60,7 +62,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "power_state_info",
 				Help:      "VM power state: 1 = ON, 0 = OFF.",
 			},
-			[]string{"cluster_name", "cluster_uuid", "vm_name"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name", PEClusterLabel},
 		),
 		memorySizeGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -69,7 +71,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "memory_size_bytes",
 				Help:      "VM assigned memory in bytes.",
 			},
-			[]string{"cluster_name", "cluster_uuid", "vm_name"},
+			[]string{"cluster_name", "cluster_uuid", "vm_name", PEClusterLabel},
 		),
 		countGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -78,7 +80,7 @@ func NewVMv3Collector(pcAPI nutanix.NutanixClient) *VMv3Collector {
 				Name:      "count",
 				Help:      "Total number of VMs per cluster.",
 			},
-			[]string{"cluster_name", "cluster_uuid"},
+			[]string{"cluster_name", "cluster_uuid", PEClusterLabel},
 		),
 	}
 }
@@ -110,7 +112,16 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 		uuid string
 	}
 	clusterVMCount := make(map[clusterKey]float64)
+	clusterNames := make(map[string]string)
+	vmClusters := make(map[string]string, len(vms))
 	for _, vm := range vms {
+		if vm.clusterUUID != "" && vm.clusterName != "" {
+			clusterNames[vm.clusterUUID] = vm.clusterName
+		}
+		if vm.uuid != "" && vm.clusterName != "" {
+			vmClusters[vm.uuid] = vm.clusterName
+		}
+
 		c.infoGauge.WithLabelValues(
 			vm.clusterName,
 			vm.clusterUUID,
@@ -118,23 +129,27 @@ func (c *VMv3Collector) Collect(ch chan<- prometheus.Metric) {
 			vm.uuid,
 			vm.powerState,
 			vm.hypervisorType,
+			vm.clusterName,
 		).Set(1)
 
 		powerValue := 0.0
 		if strings.EqualFold(vm.powerState, "ON") {
 			powerValue = 1.0
 		}
-		c.powerGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name).Set(powerValue)
+		c.powerGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name, vm.clusterName).Set(powerValue)
 
 		if vm.memorySizeMib > 0 {
-			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name).Set(float64(vm.memorySizeMib) * 1048576)
+			c.memorySizeGauge.WithLabelValues(vm.clusterName, vm.clusterUUID, vm.name, vm.clusterName).Set(float64(vm.memorySizeMib) * 1048576)
 		}
 
 		clusterVMCount[clusterKey{vm.clusterName, vm.clusterUUID}]++
 	}
 
+	c.resolver.AddClusters(clusterNames)
+	c.resolver.SetVMs(vmClusters)
+
 	for ck, count := range clusterVMCount {
-		c.countGauge.WithLabelValues(ck.name, ck.uuid).Set(count)
+		c.countGauge.WithLabelValues(ck.name, ck.uuid, ck.name).Set(count)
 	}
 
 	c.infoGauge.Collect(ch)

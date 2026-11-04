@@ -30,14 +30,16 @@ import (
 type HostInfoCollector struct {
 	clusterName string
 	api         nutanix.NutanixClient
+	resolver    *ClusterResolver
 	infoGauge   *prometheus.GaugeVec
 	stateGauge  *prometheus.GaugeVec
 }
 
-func NewHostInfoCollector(clusterName string, api nutanix.NutanixClient) *HostInfoCollector {
+func NewHostInfoCollector(clusterName string, api nutanix.NutanixClient, resolver *ClusterResolver) *HostInfoCollector {
 	return &HostInfoCollector{
 		clusterName: clusterName,
 		api:         api,
+		resolver:    resolver,
 		infoGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "nutanix",
@@ -45,7 +47,7 @@ func NewHostInfoCollector(clusterName string, api nutanix.NutanixClient) *HostIn
 				Name:      "info",
 				Help:      "Host metadata exposed as labels. Always 1.",
 			},
-			[]string{"cluster_name", "host_name", "host_uuid", "serial", "block_model_name", "cpu_model", "hypervisor_type", "hypervisor_full_name"},
+			[]string{"cluster_name", "host_name", "host_uuid", "serial", "block_model_name", "cpu_model", "hypervisor_type", "hypervisor_full_name", PEClusterLabel},
 		),
 		stateGauge: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -54,7 +56,7 @@ func NewHostInfoCollector(clusterName string, api nutanix.NutanixClient) *HostIn
 				Name:      "state",
 				Help:      "Host state: 1 = NORMAL, 0 = other.",
 			},
-			[]string{"cluster_name", "host_name"},
+			[]string{"cluster_name", "host_name", PEClusterLabel},
 		),
 	}
 }
@@ -117,6 +119,8 @@ func (c *HostInfoCollector) Collect(ch chan<- prometheus.Metric) {
 		hypervisorFullName, _ := ent["hypervisor_full_name"].(string)
 		state, _ := ent["state"].(string)
 
+		peCluster := c.resolver.ForEntity(ent, c.clusterName)
+
 		c.infoGauge.WithLabelValues(
 			c.clusterName,
 			name,
@@ -126,13 +130,14 @@ func (c *HostInfoCollector) Collect(ch chan<- prometheus.Metric) {
 			cpuModel,
 			hypervisorType,
 			hypervisorFullName,
+			peCluster,
 		).Set(1)
 
 		stateValue := 0.0
 		if strings.EqualFold(state, "NORMAL") {
 			stateValue = 1.0
 		}
-		c.stateGauge.WithLabelValues(c.clusterName, name).Set(stateValue)
+		c.stateGauge.WithLabelValues(c.clusterName, name, peCluster).Set(stateValue)
 	}
 
 	c.infoGauge.Collect(ch)

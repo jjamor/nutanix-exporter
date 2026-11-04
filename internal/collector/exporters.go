@@ -19,45 +19,53 @@ import (
 	"github.com/ingka-group/nutanix-exporter/internal/nutanix"
 )
 
-func NewClusterCollector(clusterName string, api nutanix.NutanixClient, configPath string) (*Exporter, error) {
-	labels := []string{"cluster_name"}
+// The generic collectors label every series with cluster_name (the cluster that
+// was queried) and pe_cluster_name (the cluster the entity really belongs to).
+
+func NewClusterCollector(clusterName string, api nutanix.NutanixClient, configPath string, resolver *ClusterResolver) (*Exporter, error) {
+	labels := []string{"cluster_name", PEClusterLabel}
 	e := NewExporter(clusterName, api, "/v2.0/cluster/", labels)
+	e.resolver = resolver
 	if err := e.initMetricsFromFile(configPath, labels); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-func NewHostCollector(clusterName string, api nutanix.NutanixClient, configPath string) (*Exporter, error) {
-	labels := []string{"cluster_name", "host_name"}
+func NewHostCollector(clusterName string, api nutanix.NutanixClient, configPath string, resolver *ClusterResolver) (*Exporter, error) {
+	labels := []string{"cluster_name", "host_name", PEClusterLabel}
 	e := NewExporter(clusterName, api, "/v2.0/hosts/", labels)
+	e.resolver = resolver
 	if err := e.initMetricsFromFile(configPath, labels); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-func NewVMCollector(clusterName string, api nutanix.NutanixClient, configPath string) (*Exporter, error) {
-	labels := []string{"cluster_name", "vm_name"}
+func NewVMCollector(clusterName string, api nutanix.NutanixClient, configPath string, resolver *ClusterResolver) (*Exporter, error) {
+	labels := []string{"cluster_name", "vm_name", PEClusterLabel}
 	e := NewExporter(clusterName, api, "/v2.0/vms/", labels)
+	e.resolver = resolver
 	if err := e.initMetricsFromFile(configPath, labels); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-func NewVMv1Collector(clusterName string, api nutanix.NutanixClient, configPath string) (*Exporter, error) {
-	labels := []string{"cluster_name", "vm_name"}
+func NewVMv1Collector(clusterName string, api nutanix.NutanixClient, configPath string, resolver *ClusterResolver) (*Exporter, error) {
+	labels := []string{"cluster_name", "vm_name", PEClusterLabel}
 	e := NewExporter(clusterName, api, "/v1/vms/", labels)
+	e.resolver = resolver
 	if err := e.initMetricsFromFile(configPath, labels); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-func NewStorageContainerCollector(clusterName string, api nutanix.NutanixClient, configPath string) (*Exporter, error) {
-	labels := []string{"cluster_name", "container_name"}
+func NewStorageContainerCollector(clusterName string, api nutanix.NutanixClient, configPath string, resolver *ClusterResolver) (*Exporter, error) {
+	labels := []string{"cluster_name", "container_name", PEClusterLabel}
 	e := NewExporter(clusterName, api, "/v2.0/storage_containers/", labels)
+	e.resolver = resolver
 	if err := e.initMetricsFromFile(configPath, labels); err != nil {
 		return nil, err
 	}
