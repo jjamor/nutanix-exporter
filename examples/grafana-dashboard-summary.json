@@ -3,18 +3,19 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "",
+      "description": "Prometheus datasource that scrapes the nutanix-exporter",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
     }
   ],
+  "__elements": {},
   "__requires": [
     {
       "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
-      "version": "10.0.0"
+      "version": "11.6.17"
     },
     {
       "type": "datasource",
@@ -27,10 +28,29 @@
       "id": "stat",
       "name": "Stat",
       "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
     }
   ],
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
   },
   "description": "Nutanix cluster summary: hosts, user VMs, storage containers, CPU%, Memory%, Network, I/O Latency",
   "editable": true,
@@ -41,50 +61,74 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "panels": [],
-      "repeat": "cluster",
-      "repeatDirection": "h",
-      "title": "$cluster",
+      "repeat": "pe_cluster",
+      "title": "$pe_cluster",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Number of physical nodes in the cluster",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green"
+              }
             ]
           },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 3, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 2,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
+        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "count(nutanix_host_info{cluster_name=~\"$cluster\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count(nutanix_host_info{pe_cluster_name=~\"$pe_cluster\"})",
           "legendFormat": "Hosts",
           "refId": "A"
         }
@@ -93,41 +137,61 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Number of user VMs (excludes CVMs and Prism Central VMs)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              {
+                "color": "blue"
+              }
             ]
           },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 3, "x": 3, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 2,
+        "x": 2,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
+        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "count(nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\", vm_name!~\"NTNX-.*\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count(nutanix_vm_v1_numvcpus{pe_cluster_name=~\"$pe_cluster\", vm_name!~\"NTNX-.*\"})",
           "legendFormat": "VMs",
           "refId": "A"
         }
@@ -136,41 +200,61 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Number of storage containers in the cluster",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "purple", "value": null }
+              {
+                "color": "purple"
+              }
             ]
           },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 3, "x": 6, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 2,
+        "x": 4,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
+        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "count(nutanix_storage_container_info{cluster_name=~\"$cluster\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count(nutanix_storage_container_info{pe_cluster_name=~\"$pe_cluster\"})",
           "legendFormat": "Containers",
           "refId": "A"
         }
@@ -179,205 +263,459 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "CPU usage percentage of the cluster (average across all nodes)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "orange", "value": 75 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 9, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 6,
+        "y": 1
+      },
       "id": 4,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "nutanix_cluster_cpu_usage_percent{cluster_name=~\"$cluster\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "nutanix_cluster_cpu_usage_percent{pe_cluster_name=~\"$pe_cluster\"}",
           "legendFormat": "CPU %",
           "refId": "A"
         }
       ],
       "title": "CPU %",
-      "type": "stat"
+      "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Memory usage percentage of the cluster (average across all nodes)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "orange", "value": 75 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 13, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 11,
+        "y": 1
+      },
       "id": 5,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "nutanix_cluster_memory_usage_percent{cluster_name=~\"$cluster\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "nutanix_cluster_memory_usage_percent{pe_cluster_name=~\"$pe_cluster\"}",
           "legendFormat": "Memory %",
           "refId": "A"
         }
       ],
       "title": "Memory %",
-      "type": "stat"
+      "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Total network traffic of the cluster (received + transmitted) across all nodes",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "log": 10,
+              "type": "symlog"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1073741824 },
-              { "color": "red", "value": 3221225472 }
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 1073741824
+              },
+              {
+                "color": "red",
+                "value": 3221225472
+              }
             ]
           },
           "unit": "Bps"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 17, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 16,
+        "y": 1
+      },
       "id": 6,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(nutanix_host_stats_hypervisor_num_received_bytes{cluster_name=~\"$cluster\"}[5m]) + rate(nutanix_host_stats_hypervisor_num_transmitted_bytes{cluster_name=~\"$cluster\"}[5m]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(nutanix_host_stats_hypervisor_num_received_bytes{pe_cluster_name=~\"$pe_cluster\"}[5m]) + rate(nutanix_host_stats_hypervisor_num_transmitted_bytes{pe_cluster_name=~\"$pe_cluster\"}[5m]))",
           "legendFormat": "Network",
           "refId": "A"
         }
       ],
       "title": "Network (Throughput)",
-      "type": "stat"
+      "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Average I/O latency across all active storage containers in the cluster (in microseconds)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1000 },
-              { "color": "orange", "value": 5000 },
-              { "color": "red", "value": 10000 }
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 1000
+              },
+              {
+                "color": "orange",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 10000
+              }
             ]
           },
           "unit": "µs"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 3, "x": 21, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 3,
+        "x": 21,
+        "y": 1
+      },
       "id": 7,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
       },
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "avg(nutanix_storage_container_stats_controller_avg_io_latency_usecs{cluster_name=~\"$cluster\"} > 0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "avg(nutanix_storage_container_stats_controller_avg_io_latency_usecs{pe_cluster_name=~\"$pe_cluster\"} > 0)",
           "legendFormat": "I/O Latency",
           "refId": "A"
         }
       ],
       "title": "I/O Latency",
-      "type": "stat"
+      "type": "timeseries"
     }
   ],
-  "schemaVersion": 38,
-  "tags": ["nutanix", "summary"],
+  "schemaVersion": 41,
+  "tags": [
+    "nutanix",
+    "summary"
+  ],
   "templating": {
     "list": [
       {
-        "allValue": "",
         "current": {},
-        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "definition": "label_values(nutanix_cluster_info, cluster_name)",
-        "hide": 0,
         "includeAll": true,
-        "label": "Cluster",
+        "label": "Prism Central",
         "multi": true,
         "name": "cluster",
         "options": [],
@@ -387,17 +725,40 @@
         },
         "refresh": 2,
         "regex": "",
-        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, pe_cluster_name)",
+        "includeAll": true,
+        "label": "Cluster",
+        "multi": true,
+        "name": "pe_cluster",
+        "options": [],
+        "query": {
+          "query": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, pe_cluster_name)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
         "sort": 1,
         "type": "query"
       }
     ]
   },
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "Nutanix - Cluster Summary",
-  "uid": "nutanix-cluster-summary",
-  "version": 1,
+  "uid": "nutanix-cluster-summary-20261021",
+  "version": 10,
   "weekStart": ""
 }

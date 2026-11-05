@@ -3,25 +3,14 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "Prometheus datasource for Nutanix metrics",
+      "description": "Prometheus datasource that scrapes the nutanix-exporter",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
     }
   ],
+  "__elements": {},
   "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "11.0.0"
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    },
     {
       "type": "panel",
       "id": "bargauge",
@@ -33,6 +22,18 @@
       "id": "gauge",
       "name": "Gauge",
       "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.6.17"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
     },
     {
       "type": "panel",
@@ -69,7 +70,7 @@
       }
     ]
   },
-  "description": "Dashboard completo de infraestructura Nutanix: cluster, hosts, VMs y storage containers",
+  "description": "Complete Nutanix infrastructure dashboard: cluster, hosts, VMs and storage containers",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -128,20 +129,25 @@
           "fields": "/^version$/",
           "values": true
         },
-        "textMode": "value_and_name",
         "showPercentChange": false,
+        "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_info{cluster_name=~\"$cluster\"}",
+          "editorMode": "code",
+          "expr": "nutanix_cluster_info{cluster_name=\"$cluster\"}",
           "format": "table",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Cluster Version",
+      "title": "Prism Central Version",
       "transformations": [
         {
           "id": "organize",
@@ -206,14 +212,18 @@
         "textMode": "value",
         "wideLayout": true
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "count(nutanix_host_info{cluster_name=~\"$cluster\"})",
-          "legendFormat": "Nodos",
+          "expr": "count(nutanix_host_info{pe_cluster_name=~\"$pe_cluster\"})",
+          "legendFormat": "Nodes",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "Hosts",
@@ -231,7 +241,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "purple"
+                "color": "dark-green"
               }
             ]
           }
@@ -262,18 +272,23 @@
         "textMode": "value",
         "wideLayout": true
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "count(nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\"})",
+          "expr": "count(nutanix_vm_v1_numvcpus{pe_cluster_name=~\"$pe_cluster\", vm_name!~\"NTNX-.*\"})",
           "legendFormat": "VMs",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "VMs Totales",
-      "type": "stat"
+      "title": "Total VMs",
+      "type": "stat",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -318,17 +333,21 @@
         "textMode": "value",
         "wideLayout": true
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
           "expr": "sum(nutanix_cluster_num_nodes{cluster_name=~\"$cluster\"})",
-          "legendFormat": "Nodos PC",
           "instant": true,
-          "refId": "A"
+          "legendFormat": "PC Nodes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Nodos PC",
+      "title": "PC Nodes",
       "type": "stat"
     },
     {
@@ -338,6 +357,9 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
@@ -383,12 +405,18 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_cpu_usage_percent{cluster_name=~\"$cluster\"}",
-          "legendFormat": "CPU %",
-          "refId": "A"
+          "editorMode": "code",
+          "expr": "nutanix_cluster_cpu_usage_percent{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "{{pe_cluster_name}}",
+          "range": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "CPU Cluster",
@@ -446,15 +474,19 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_memory_usage_percent{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Memoria %",
-          "refId": "A"
+          "expr": "nutanix_cluster_memory_usage_percent{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "{{pe_cluster_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Memoria Cluster",
+      "title": "Cluster Memory",
       "type": "gauge"
     },
     {
@@ -465,6 +497,7 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -486,8 +519,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Usado"
+              "id": "byRegexp",
+              "options": "^Usado"
             },
             "properties": [
               {
@@ -501,8 +534,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Libre"
+              "id": "byRegexp",
+              "options": "^Libre"
             },
             "properties": [
               {
@@ -547,17 +580,25 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_storage_used_bytes{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Usado",
-          "refId": "A"
+          "expr": "nutanix_cluster_storage_used_bytes{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Used {{pe_cluster_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_cluster_storage_free_bytes{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Libre",
-          "refId": "B"
+          "expr": "nutanix_cluster_storage_free_bytes{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Free {{pe_cluster_name}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "Storage Cluster",
@@ -595,7 +636,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 20,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -603,13 +644,13 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -645,8 +686,13 @@
       "id": 7,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -656,12 +702,16 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_iops{cluster_name=~\"$cluster\"}",
-          "legendFormat": "IOPS Cluster",
-          "refId": "A"
+          "expr": "nutanix_cluster_iops{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "IOPS {{pe_cluster_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "Cluster IOPS",
@@ -728,8 +778,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Read"
+              "id": "byRegexp",
+              "options": "^Read"
             },
             "properties": [
               {
@@ -743,8 +793,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Write"
+              "id": "byRegexp",
+              "options": "^Write"
             },
             "properties": [
               {
@@ -767,8 +817,13 @@
       "id": 8,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -778,17 +833,25 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_read_bytes_per_sec{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Read",
-          "refId": "A"
+          "expr": "nutanix_cluster_read_bytes_per_sec{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Read {{pe_cluster_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_cluster_write_bytes_per_sec{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Write",
-          "refId": "B"
+          "expr": "nutanix_cluster_write_bytes_per_sec{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Write {{pe_cluster_name}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "Cluster Throughput",
@@ -855,8 +918,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Capacidad"
+              "id": "byRegexp",
+              "options": "^Capacidad"
             },
             "properties": [
               {
@@ -880,14 +943,14 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Uso"
+              "id": "byRegexp",
+              "options": "^Uso"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "yellow",
+                  "fixedColor": "green",
                   "mode": "fixed"
                 }
               }
@@ -904,8 +967,13 @@
       "id": 9,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -915,17 +983,27 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_cluster_cpu_capacity_hz{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Capacidad",
-          "refId": "A"
+          "editorMode": "code",
+          "expr": "nutanix_cluster_cpu_capacity_hz{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Capacity {{pe_cluster_name}}",
+          "range": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_cluster_cpu_usage_hz{cluster_name=~\"$cluster\"}",
-          "legendFormat": "Uso",
-          "refId": "B"
+          "expr": "nutanix_cluster_cpu_usage_hz{pe_cluster_name=~\"$pe_cluster\"}",
+          "legendFormat": "Usage {{pe_cluster_name}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "CPU Cluster (Hz)",
@@ -941,7 +1019,7 @@
       },
       "id": 102,
       "panels": [],
-      "title": "Hosts - Capacidad",
+      "title": "Hosts - Capacity",
       "type": "row"
     },
     {
@@ -999,17 +1077,21 @@
           }
         ]
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "nutanix_host_info{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_info{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "format": "table",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Inventario de Hosts",
+      "title": "Host Inventory",
       "transformations": [
         {
           "id": "organize",
@@ -1023,13 +1105,14 @@
               "job": true
             },
             "renameByName": {
-              "block_model_name": "Modelo",
-              "cluster_name": "Cluster",
+              "block_model_name": "Model",
+              "cluster_name": "Prism Central",
               "cpu_model": "CPU",
               "host_name": "Host",
               "hypervisor_full_name": "Hypervisor",
-              "hypervisor_type": "Tipo HV",
-              "serial": "Serial"
+              "hypervisor_type": "HV Type",
+              "serial": "Serial",
+              "pe_cluster_name": "Cluster"
             }
           }
         }
@@ -1097,15 +1180,21 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_stats_hypervisor_cpu_usage_ppm{cluster_name=~\"$cluster\", host_name=~\"$host\"} / 10000",
+          "editorMode": "code",
+          "expr": "(nutanix_host_stats_hypervisor_cpu_usage_ppm{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"} / 10000)",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "range": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "CPU % por Host",
+      "title": "CPU % per Host",
       "type": "bargauge"
     },
     {
@@ -1169,15 +1258,19 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_stats_hypervisor_memory_usage_ppm{cluster_name=~\"$cluster\", host_name=~\"$host\"} / 10000",
+          "expr": "nutanix_host_stats_hypervisor_memory_usage_ppm{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"} / 10000",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Memoria % por Host",
+      "title": "Memory % per Host",
       "type": "bargauge"
     },
     {
@@ -1188,6 +1281,7 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1231,15 +1325,19 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_num_vms{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_num_vms{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "VMs por Host",
+      "title": "VMs per Host",
       "type": "bargauge"
     },
     {
@@ -1303,15 +1401,19 @@
         "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_state{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_state{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Estado Hosts",
+      "title": "Host Status",
       "type": "stat"
     },
     {
@@ -1322,19 +1424,12 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "red",
-                "value": 90
               }
             ]
           },
@@ -1373,15 +1468,19 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_usage_stats_storage_usage_bytes{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_usage_stats_storage_usage_bytes{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Storage Usado por Host",
+      "title": "Storage Used per Host",
       "type": "bargauge"
     },
     {
@@ -1394,7 +1493,7 @@
       },
       "id": 103,
       "panels": [],
-      "title": "Hosts - I/O y Red",
+      "title": "Hosts - I/O and Network",
       "type": "row"
     },
     {
@@ -1416,7 +1515,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -1424,17 +1523,17 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "none"
+              "mode": "normal"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -1458,18 +1557,25 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 6,
+        "h": 11,
+        "w": 12,
         "x": 0,
         "y": 28
       },
       "id": 16,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -1477,15 +1583,19 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_stats_num_iops{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_stats_num_iops{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "IOPS por Host",
+      "title": "IOPS per Host",
       "type": "timeseries"
     },
     {
@@ -1549,16 +1659,21 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
+        "h": 11,
+        "w": 12,
+        "x": 12,
         "y": 28
       },
       "id": 17,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1568,20 +1683,28 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_stats_read_io_bandwidth_kbps{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_stats_read_io_bandwidth_kbps{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}} read",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_host_stats_write_io_bandwidth_kbps{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_stats_write_io_bandwidth_kbps{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}} write",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Bandwidth I/O por Host",
+      "title": "I/O Bandwidth per Host",
       "type": "timeseries"
     },
     {
@@ -1603,7 +1726,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -1611,13 +1734,13 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1628,6 +1751,7 @@
             }
           },
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1636,7 +1760,7 @@
               },
               {
                 "color": "red",
-                "value": 80
+                "value": 10
               }
             ]
           },
@@ -1645,16 +1769,21 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 28
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 39
       },
       "id": 18,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1664,15 +1793,19 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_host_stats_avg_io_latency_usecs{cluster_name=~\"$cluster\", host_name=~\"$host\"}",
+          "expr": "nutanix_host_stats_avg_io_latency_usecs{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}",
           "legendFormat": "{{host_name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Latencia I/O por Host",
+      "title": "I/O Latency per Host",
       "type": "timeseries"
     },
     {
@@ -1702,9 +1835,9 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "pointSize": 5,
+            "pointSize": 1,
             "scaleDistribution": {
               "type": "linear"
             },
@@ -1736,18 +1869,25 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 28
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 39
       },
       "id": 19,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Name",
+          "sortDesc": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -1755,20 +1895,30 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "rate(nutanix_host_stats_hypervisor_num_received_bytes{cluster_name=~\"$cluster\", host_name=~\"$host\"}[5m])",
+          "editorMode": "code",
+          "expr": "rate(nutanix_host_stats_hypervisor_num_received_bytes{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}[5m])",
           "legendFormat": "{{host_name}} RX",
-          "refId": "A"
+          "range": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "rate(nutanix_host_stats_hypervisor_num_transmitted_bytes{cluster_name=~\"$cluster\", host_name=~\"$host\"}[5m])",
+          "expr": "rate(nutanix_host_stats_hypervisor_num_transmitted_bytes{pe_cluster_name=~\"$pe_cluster\", host_name=~\"$host\"}[5m])",
           "legendFormat": "{{host_name}} TX",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Red por Host (rate)",
+      "title": "Network per Host (rate)",
       "type": "timeseries"
     },
     {
@@ -1777,7 +1927,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 51
       },
       "id": 104,
       "panels": [],
@@ -1804,21 +1954,25 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #B"
+            },
+            "properties": []
+          }
+        ]
       },
       "gridPos": {
         "h": 7,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 36
+        "y": 52
       },
       "id": 20,
       "options": {
@@ -1834,22 +1988,26 @@
         "showHeader": true,
         "sortBy": [
           {
-            "desc": false,
-            "displayName": "vm_name"
+            "desc": true,
+            "displayName": "Value #A"
           }
         ]
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (vm_name) (nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\", vm_name=~\"$vm\"})",
+          "expr": "sum by (vm_name, pe_cluster_name) (nutanix_vm_v1_numvcpus{pe_cluster_name=~\"$pe_cluster\", vm_name=~\"$vm\", vm_name!~\"NTNX-.*\"})",
           "format": "table",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Inventario de VMs",
+      "title": "VM Inventory",
       "transformations": [
         {
           "id": "organize",
@@ -1863,15 +2021,17 @@
               "vm_uuid": true
             },
             "renameByName": {
-              "cluster_name": "Cluster",
+              "cluster_name": "Prism Central",
               "hypervisor_type": "Hypervisor",
-              "power_state": "Estado",
-              "vm_name": "VM"
+              "power_state": "Status",
+              "vm_name": "VM",
+              "pe_cluster_name": "Cluster"
             }
           }
         }
       ],
-      "type": "table"
+      "type": "table",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -1880,6 +2040,43 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 2,
           "mappings": [],
           "max": 100,
           "min": 0,
@@ -1901,51 +2098,80 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "NTNX-25KMBJ4-A-CVM",
+                  "NTNX-55KMBJ4-A-CVM",
+                  "NTNX-56KMBJ4-A-CVM",
+                  "NTNX-86KMBJ4-A-CVM"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 36
+        "w": 8,
+        "x": 8,
+        "y": 52
       },
       "id": 21,
       "options": {
-        "displayMode": "gradient",
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
           ],
-          "fields": "",
-          "values": false
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Name",
+          "sortDesc": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "nutanix_vm_v1_stats_hypervisor_cpu_usage_ppm{cluster_name=~\"$cluster\", vm_name=~\"$vm\"} / 10000",
+          "expr": "nutanix_vm_v1_stats_hypervisor_cpu_usage_ppm{pe_cluster_name=~\"$pe_cluster\", vm_name=~\"$vm\", vm_name!~\"NTNX-.*\"} / 10000",
           "legendFormat": "{{vm_name}}",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "CPU % por VM",
-      "type": "bargauge"
+      "title": "CPU % per VM",
+      "type": "timeseries",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -1979,11 +2205,12 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 36
+        "w": 8,
+        "x": 16,
+        "y": 52
       },
       "id": 22,
+      "interval": "10s",
       "options": {
         "displayMode": "gradient",
         "legend": {
@@ -2008,18 +2235,27 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
+          "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "nutanix_vm_v1_stats_memory_usage_ppm{cluster_name=~\"$cluster\", vm_name=~\"$vm\"} / 10000",
+          "expr": "sort(nutanix_vm_v1_stats_memory_usage_ppm{pe_cluster_name=~\"$pe_cluster\", vm_name!~\"NTNX-.*\"} / 10000)",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
           "legendFormat": "{{vm_name}}",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "useBackend": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Memoria % por VM",
-      "type": "bargauge"
+      "title": "Memory % per VM",
+      "type": "bargauge",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -2028,7 +2264,13 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "fieldMinMax": false,
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2045,7 +2287,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 43
+        "y": 59
       },
       "id": 23,
       "options": {
@@ -2072,22 +2314,27 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "nutanix_vm_memory_size_bytes{vm_name=~\"$vm\"}",
+          "editorMode": "code",
+          "expr": "sort(nutanix_vm_memory_size_bytes{pe_cluster_name=~\"$pe_cluster\", vm_name=~\"$vm\", vm_name!~\"NTNX-.*\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "{{vm_name}}",
           "range": true,
           "refId": "A",
-          "useBackend": false
+          "useBackend": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Memoria Asignada por VM",
-      "type": "bargauge"
+      "title": "Allocated Memory per VM",
+      "type": "bargauge",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -2096,7 +2343,9 @@
       },
       "fieldConfig": {
         "defaults": {
+          "decimals": 0,
           "mappings": [],
+          "min": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2105,7 +2354,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -2113,7 +2362,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 43
+        "y": 59
       },
       "id": 24,
       "options": {
@@ -2140,18 +2389,23 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\", vm_name=~\"$vm\"}",
+          "expr": "nutanix_vm_v1_numvcpus{pe_cluster_name=~\"$pe_cluster\", vm_name=~\"$vm\", vm_name!~\"NTNX-.*\"}",
           "legendFormat": "{{vm_name}}",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "vCPUs por VM",
-      "type": "bargauge"
+      "title": "vCPUs per VM",
+      "type": "bargauge",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "datasource": {
@@ -2177,7 +2431,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 43
+        "y": 59
       },
       "id": 25,
       "options": {
@@ -2204,18 +2458,23 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "nutanix_vm_v1_stats_controller_user_bytes{cluster_name=~\"$cluster\", vm_name=~\"$vm\"} > 0",
+          "expr": "nutanix_vm_v1_stats_controller_user_bytes{pe_cluster_name=~\"$pe_cluster\", vm_name=~\"$vm\", vm_name!~\"NTNX-.*\"} > 0",
           "legendFormat": "{{vm_name}}",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Disco Usado por VM",
-      "type": "bargauge"
+      "title": "Disk Used per VM",
+      "type": "bargauge",
+      "description": "Filtered by the \"Cluster\" selector. Excludes CVMs (VM names starting with NTNX-)."
     },
     {
       "collapsed": false,
@@ -2223,7 +2482,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 65
       },
       "id": 105,
       "panels": [],
@@ -2264,7 +2523,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 66
       },
       "id": 30,
       "options": {
@@ -2285,16 +2544,20 @@
           }
         ]
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_info{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
+          "expr": "nutanix_storage_container_info{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
           "format": "table",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Inventario Storage Containers",
+      "title": "Storage Containers Inventory",
       "transformations": [
         {
           "id": "organize",
@@ -2308,12 +2571,13 @@
               "job": true
             },
             "renameByName": {
-              "cluster_name": "Cluster",
-              "compression": "Compresion",
+              "cluster_name": "Prism Central",
+              "compression": "Compression",
               "container_name": "Container",
               "dedup": "Dedup",
               "erasure_code": "Erasure Code",
-              "replication_factor": "RF"
+              "replication_factor": "RF",
+              "pe_cluster_name": "Cluster"
             }
           }
         }
@@ -2354,7 +2618,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 50
+        "y": 66
       },
       "id": 31,
       "options": {
@@ -2381,15 +2645,19 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_usage_percent{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}}",
-          "refId": "A"
+          "expr": "nutanix_storage_container_usage_percent{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Uso % por Container",
+      "title": "Usage % per Container",
       "type": "bargauge"
     },
     {
@@ -2400,6 +2668,7 @@
       "fieldConfig": {
         "defaults": {
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2416,7 +2685,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 50
+        "y": 66
       },
       "id": 32,
       "options": {
@@ -2443,12 +2712,16 @@
         "sizing": "auto",
         "valueMode": "color"
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_usage_stats_data_reduction_overall_saving_ratio_ppm{cluster_name=~\"$cluster\", container_name=~\"$container\"} / 1000000",
-          "legendFormat": "{{container_name}}",
-          "refId": "A"
+          "expr": "nutanix_storage_container_usage_stats_data_reduction_overall_saving_ratio_ppm{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"} / 1000000",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "Data Reduction Ratio (x:1)",
@@ -2518,7 +2791,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 57
+        "y": 73
       },
       "id": 33,
       "options": {
@@ -2534,20 +2807,28 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_stats_controller_num_read_iops{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}} read",
-          "refId": "A"
+          "expr": "nutanix_storage_container_stats_controller_num_read_iops{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}} read",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_storage_container_stats_controller_num_write_iops{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}} write",
-          "refId": "B"
+          "expr": "nutanix_storage_container_stats_controller_num_write_iops{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}} write",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "IOPS Read/Write por Container",
+      "title": "IOPS Read/Write per Container",
       "type": "timeseries"
     },
     {
@@ -2614,7 +2895,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 57
+        "y": 73
       },
       "id": 34,
       "options": {
@@ -2630,20 +2911,28 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_stats_controller_read_io_bandwidth_kbps{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}} read",
-          "refId": "A"
+          "expr": "nutanix_storage_container_stats_controller_read_io_bandwidth_kbps{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}} read",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         },
         {
-          "expr": "nutanix_storage_container_stats_controller_write_io_bandwidth_kbps{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}} write",
-          "refId": "B"
+          "expr": "nutanix_storage_container_stats_controller_write_io_bandwidth_kbps{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}} write",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Bandwidth R/W por Container",
+      "title": "R/W Bandwidth per Container",
       "type": "timeseries"
     },
     {
@@ -2710,15 +2999,22 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 57
+        "y": 73
       },
       "id": 35,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min",
+            "mean"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -2726,19 +3022,22 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.6.6",
+      "pluginVersion": "11.6.17",
       "targets": [
         {
-          "expr": "nutanix_storage_container_stats_controller_avg_io_latency_usecs{cluster_name=~\"$cluster\", container_name=~\"$container\"}",
-          "legendFormat": "{{container_name}}",
-          "refId": "A"
+          "expr": "nutanix_storage_container_stats_controller_avg_io_latency_usecs{pe_cluster_name=~\"$pe_cluster\", container_name=~\"$container\"}",
+          "legendFormat": "{{pe_cluster_name}} / {{container_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
-      "title": "Latencia I/O por Container",
+      "title": "I/O Latency per Container",
       "type": "timeseries"
     }
   ],
-  "preload": false,
   "refresh": "30s",
   "schemaVersion": 41,
   "tags": [
@@ -2749,15 +3048,15 @@
   "templating": {
     "list": [
       {
+        "allowCustomValue": false,
         "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(nutanix_cluster_info, cluster_name)",
-        "includeAll": true,
-        "label": "Cluster",
-        "multi": true,
+        "includeAll": false,
+        "label": "Prism Central",
         "name": "cluster",
         "options": [],
         "query": {
@@ -2775,14 +3074,36 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, host_name)",
+        "definition": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, pe_cluster_name)",
+        "includeAll": true,
+        "label": "Cluster",
+        "multi": true,
+        "name": "pe_cluster",
+        "options": [],
+        "query": {
+          "query": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, pe_cluster_name)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "description": "Nutanix Prism Element cluster (NTX-RL01, NTX-RL02...) managed by Prism Central. Filters every panel except Prism Central Version and PC Nodes, which depend on the Prism Central selector."
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(nutanix_host_info{pe_cluster_name=~\"$pe_cluster\"}, host_name)",
         "includeAll": true,
         "label": "Host",
         "multi": true,
         "name": "host",
         "options": [],
         "query": {
-          "query": "label_values(nutanix_host_info{cluster_name=~\"$cluster\"}, host_name)",
+          "query": "label_values(nutanix_host_info{pe_cluster_name=~\"$pe_cluster\"}, host_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -2791,12 +3112,13 @@
         "type": "query"
       },
       {
+        "allowCustomValue": false,
         "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\"},vm_name)",
+        "definition": "label_values(nutanix_vm_info{pe_cluster_name=~\"$pe_cluster\"}, vm_name)",
         "includeAll": true,
         "label": "VM",
         "multi": true,
@@ -2804,7 +3126,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(nutanix_vm_v1_numvcpus{cluster_name=~\"$cluster\"},vm_name)",
+          "query": "label_values(nutanix_vm_info{pe_cluster_name=~\"$pe_cluster\"}, vm_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -2818,14 +3140,14 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(nutanix_storage_container_info{cluster_name=~\"$cluster\"}, container_name)",
+        "definition": "label_values(nutanix_storage_container_info{pe_cluster_name=~\"$pe_cluster\"}, container_name)",
         "includeAll": true,
         "label": "Container",
         "multi": true,
         "name": "container",
         "options": [],
         "query": {
-          "query": "label_values(nutanix_storage_container_info{cluster_name=~\"$cluster\"}, container_name)",
+          "query": "label_values(nutanix_storage_container_info{pe_cluster_name=~\"$pe_cluster\"}, container_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -2834,33 +3156,35 @@
         "type": "query"
       },
       {
-        "current": {},
+        "baseFilters": [],
         "datasource": {
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values({cluster_name=\"$cluster\"},cluster_uuid)",
-        "hide": 2,
-        "name": "cluster_uuid",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values({cluster_name=\"$cluster\"},cluster_uuid)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "type": "query"
+        "filters": [],
+        "name": "Filters",
+        "type": "adhoc"
       }
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-8d",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
   "timezone": "browser",
   "title": "Nutanix Infrastructure Overview",
-  "uid": "nutanix-infrastructure-overview-20260513",
+  "uid": "nutanix-infrastructure-overview-20261021",
+  "version": 48,
   "weekStart": "monday"
 }
