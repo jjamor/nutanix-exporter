@@ -85,6 +85,16 @@ These collectors expose structured metrics with labels and do not require YAML c
 | Storage Container Info | PE v2 `/storage_containers/` | `nutanix_storage_container_info`, `nutanix_storage_container_usage_percent` |
 | VM v3 | PC v3 `/vms/list` | `nutanix_vm_info`, `nutanix_vm_power_state_info`, `nutanix_vm_memory_size_bytes`, `nutanix_vm_count` |
 
+#### Cluster Stats per cluster
+
+When the exporter queries a Prism Central, `/hosts/` returns the hosts of every cluster that Prism Central manages. By default the `nutanix_cluster_*` metrics from the Cluster Stats collector sum all of them into a single series, labelled with the queried cluster in both `cluster_name` and `pe_cluster_name`.
+
+Set `EXPORTER_SPLIT_CLUSTER_STATS=true` to group the hosts by the cluster each one really belongs to. The collector then exposes one series per real cluster, identified by the `pe_cluster_name` label, while `cluster_name` keeps the name of the queried cluster.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXPORTER_SPLIT_CLUSTER_STATS` | Export `nutanix_cluster_*` as one series per real cluster instead of one aggregated series. | `false` |
+
 ## Running the Exporter
 
 While the exporter is designed to run in a containerized environment, it can also be run natively on a host. The following instructions will guide you through both methods. For production environments, the exporter should always be run in a container. However, for development and testing, running the Go binary natively is generally easier.
@@ -113,6 +123,7 @@ PC_CLUSTER_NAME='Prism Central' (Required, can be any value, letters a-z,A-Z, nu
 PC_CLUSTER_URL=https://your-pc-cluster.yourdomain.com:9440 (Required, the full URL to Prism Central)
 PC_API_VERSION=v3 (Optional, defaults to v4. Supports v3, v4b1, v4)
 EXPORTER_LISTEN_ADDRESS=:9408 (Optional, defaults to :9408. Address and port the exporter listens on)
+EXPORTER_SPLIT_CLUSTER_STATS=false (Optional, defaults to false. When true, nutanix_cluster_* metrics are exported as one series per real cluster instead of a single sum, see "Cluster Stats per cluster")
 CLUSTER_REFRESH_INTERVAL=1800 (Optional, defaults to 30 minutes, value is in seconds)
 CLUSTER_PREFIX=optional-cluster-prefix (Optional, prefix to filter cluster names)
 CONFIG_PATH=/etc/prometheus-nutanix-exporter/ (Optional, defaults to `./configs`)
